@@ -982,6 +982,166 @@ function runCalendar() {
     ? "Anomalía respecto a la media de referencia por fecha (ventana ±7 días)." : "";
 }
 
+
+// ==========================================================
+// PRODUCTO: Olas de calor y de frío
+// ==========================================================
+
+function runWaves() {
+  const S = state.station;
+  const calor = $("ol-tipo").value === "calor";
+  const oficial = $("ol-def").value === "oficial";
+  const v = calor ? "tmax" : "tmin";
+  const values = S.json.data[v];
+  const [refA, refB] = getRef();
+
+  // umbral por mes-día
+  const thr = new Map();
+  let defTxt;
+  if (oficial) {
+    // P95 de tmax jul-ago (P5 de tmin ene-feb) de 1971-2000, umbral fijo
+    const pool = [];
+    for (let i = 0; i < values.length; i++) {
+      const y = S.years[i], mo = Math.floor(S.md[i] / 100);
+      if (y < 1971 || y > 2000 || values[i] === null) continue;
+      if (calor ? (mo === 7 || mo === 8) : (mo === 1 || mo === 2)) pool.push(values[i]);
+    }
+    if (pool.length < 500) {
+      $("ol-note").textContent = `Datos insuficientes en 1971–2000 (${pool.length} días) para la definición oficial.`;
+      Plotly.purge("plot-olas"); return;
+    }
+    pool.sort((a, b) => a - b);
+    const t = quantile(pool, calor ? 0.95 : 0.05);
+    for (const m of MD_SEQ) thr.set(m, t);
+    defTxt = `umbral fijo ${t.toFixed(1)} °C (P${calor ? 95 : 5} ${calor ? "jul–ago" : "ene–feb"} 1971–2000)`;
+  } else {
+    const clim = climDaily(values, refA, refB, 10); // ±10 días = ventana de 21
+    for (const [m, pool] of clim.sorted) thr.set(m, quantile(pool, calor ? 0.95 : 0.05));
+    thr.set(229, thr.get(228));
+    if (thr.size < 300) {
+      $("ol-note").textContent = "Referencia insuficiente para el umbral móvil.";
+      Plotly.purge("plot-olas"); return;
+    }
+    defTxt = `P${calor ? 95 : 5} móvil de 21 días sobre ${refA}–${refB}`;
+  }
+
+  // detección de episodios (>=3 días consecutivos; hueco corta)
+  const events = [];
+  const perYear = new Map(); // año → {dias, olas}
+  let start = -1, len = 0, exc = 0;
+  function closeRun(i) {
+    if (len >= 3) {
+      events.push({ start, len, exc: exc / len });
+      const y = S.years[start];
+      const e = perYear.get(y) || { dias: 0, olas: 0 };
+      e.dias += len; e.olas++;
+      perYear.set(y, e);
+    }
+    len = 0; exc = 0;
+  }
+  for (let i = 0; i <= values.length; i++) {
+    const x = i < values.length ? values[i] : null;
+    const t = i < values.length ? thr.get(S.md[i]) : undefined;
+    const ok = x !== null && t !== undefined && (calor ? x > t : x < t);
+    if (ok) { if (!len) start = i; len++; exc += Math.abs(x - t); }
+    else closeRun(i);
+  }
+  events.sort((a, b) => b.len - a.len);
+
+  const y0 = S.yearList[0], y1 = S.yearList[S.yearList.length - 1];
+  const yrs = [], dias = [], olas = [];
+  for (let y = y0; y <= y1; y++) {
+    yrs.push(y);
+    const e = perYear.get(y);
+    dias.push(e ? e.dias : 0);
+    olas.push(e ? e.olas : 0);
+  }
+
+  const layout = baseLayout(`${S.json.name} · olas de ${calor ? "calor" : "frío"} · ${defTxt}`);
+  layout.yaxis.title = { text: "días en ola / año" };
+  layout.yaxis2 = { overlaying: "y", side: "right", title: { text: "nº de olas" },
+                    gridcolor: "rgba(0,0,0,0)", zerolinecolor: "#2b3340", rangemode: "tozero" };
+  layout.legend = { orientation: "h", y: -0.12 };
+  Plotly.newPlot("plot-olas", [
+    { x: yrs, y: dias, type: "bar", name: "días en ola",
+      marker: { color: dias, colorscale: calor ? "Reds" : "Blues" },
+      hovertemplate: "%{x}: %{y} días<extra></extra>" },
+    { x: yrs, y: olas, yaxis: "y2", mode: "lines+markers", name: "nº de olas",
+      line: { color: "#e6edf3", width: 1 }, marker: { size: 4 },
+      hovertemplate: "%{x}: %{y} olas<extra></extra>" },
+  ], layout, PLOTLY_CFG);
+
+  let top = "";
+  if (events.length) {
+    const e = events[0];
+    top = ` Episodio más largo: ${e.len} días (${fmtDate(S.startMs, e.start)} → ` +
+      `${fmtDate(S.startMs, e.start + e.len - 1)}), exceso medio ${e.exc.toFixed(1)} °C.`;
+  }
+  $("ol-note").textContent =
+    `${events.length} episodios de ≥3 días en toda la serie.${top} ` +
+    `La oficial de AEMET usa el 10% de estaciones a la vez; aquí está adaptada a estación única. Los huecos cortan episodios.`;
+}
+
+// ==========================================================
+// PRODUCTO: Ratio de récords cálidos vs fríos por década
+// ==========================================================
+
+function runRecords() {
+  const S = state.station;
+  const skip = +$("re-skip").value;
+  const tmax = S.json.data.tmax, tmin = S.json.data.tmin;
+  const y0 = S.yearList[0];
+  const startCount = y0 + skip * 10;
+
+  const rMax = new Map(), rMin = new Map(); // md → récord vigente
+  const warm = new Map(), cold = new Map(); // década → conteo
+  const dec = (y) => Math.floor(y / 10) * 10;
+  for (let i = 0; i < tmax.length; i++) {
+    const m = S.md[i], y = S.years[i];
+    if (tmax[i] !== null) {
+      const r = rMax.get(m);
+      if (r === undefined || tmax[i] > r) {
+        rMax.set(m, tmax[i]);
+        if (y >= startCount) warm.set(dec(y), (warm.get(dec(y)) || 0) + 1);
+      }
+    }
+    if (tmin[i] !== null) {
+      const r = rMin.get(m);
+      if (r === undefined || tmin[i] < r) {
+        rMin.set(m, tmin[i]);
+        if (y >= startCount) cold.set(dec(y), (cold.get(dec(y)) || 0) + 1);
+      }
+    }
+  }
+
+  const decades = [...new Set([...warm.keys(), ...cold.keys()])].sort((a, b) => a - b);
+  const w = decades.map((d) => warm.get(d) || 0);
+  const c = decades.map((d) => cold.get(d) || 0);
+  const labels = decades.map((d) => `${d}s`);
+  const ratio = decades.map((d, i) => c[i] ? (w[i] / c[i]).toFixed(1) : "∞");
+
+  const layout = baseLayout(
+    `${S.json.name} · récords diarios batidos por década (desde ${startCount})`);
+  layout.barmode = "group";
+  layout.yaxis.title = { text: "récords batidos" };
+  layout.legend = { orientation: "h", y: -0.12 };
+  layout.annotations = decades.map((d, i) => ({
+    x: labels[i], y: Math.max(w[i], c[i]), yshift: 14, showarrow: false,
+    text: `${ratio[i]}:1`, font: { size: 11, color: "#8b949e" },
+  }));
+  Plotly.newPlot("plot-records", [
+    { x: labels, y: w, type: "bar", name: "récords cálidos (Tmax)",
+      marker: { color: VAR_COLORS.tmax }, hovertemplate: "%{x}: %{y}<extra>cálidos</extra>" },
+    { x: labels, y: c, type: "bar", name: "récords fríos (Tmin)",
+      marker: { color: VAR_COLORS.tmin }, hovertemplate: "%{x}: %{y}<extra>fríos</extra>" },
+  ], layout, PLOTLY_CFG);
+
+  $("re-note").textContent =
+    `Un récord se cuenta cuando la Tmax (Tmin) del día supera (baja de) el récord vigente ` +
+    `de esa fecha hasta ese momento. En clima estacionario el ratio tiende a 1:1 y ambos decaen con la edad de la serie. ` +
+    `Las ${skip} primeras décadas se excluyen del conteo (todo es récord al principio) pero sí fijan los récords iniciales.`;
+}
+
 // ==========================================================
 // PRODUCTO: Dos estaciones
 // ==========================================================
@@ -1058,19 +1218,22 @@ async function runDuel() {
 Object.assign(TAB_RUNNERS, {
   anio: runAnio, evolucion: runEvolution, stripes: runStripes,
   indices: runIndices, rachas: runStreaks, comparador: runComparator,
+  olas: runWaves, records: runRecords,
   distribucion: runDistribution, calendario: runCalendar, duelo: runDuel,
 });
 
 function bindControls() {
   const runs = { "an-run": runAnio, "ev-run": runEvolution, "st-run": runStripes,
                  "ix-run": runIndices, "ra-run": runStreaks, "co-run": runComparator,
-                 "di-run": runDistribution, "ca-run": runCalendar, "du-run": runDuel };
+                 "di-run": runDistribution, "ca-run": runCalendar, "du-run": runDuel,
+                 "ol-run": runWaves, "re-run": runRecords };
   for (const [id, fn] of Object.entries(runs)) $(id).addEventListener("click", fn);
 
   for (const [slider, out] of [["ev-cov", "ev-cov-val"], ["co-cov", "co-cov-val"],
                                ["st-cov", "st-cov-val"], ["ix-cov", "ix-cov-val"]]) {
     $(slider).addEventListener("input", () => { $(out).textContent = `${$(slider).value}%`; });
   }
+  $("re-skip").addEventListener("input", () => { $("re-skip-val").textContent = $("re-skip").value; });
   $("ra-var").addEventListener("change", () => {
     $("ra-unit").textContent = VAR_UNITS[$("ra-var").value];
   });

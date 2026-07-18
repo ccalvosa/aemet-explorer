@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=5">
+<link rel="stylesheet" href="css/style.css?v=6">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -83,6 +83,8 @@
       <button class="tab" data-tab="comparador">Comparador</button>
       <button class="tab" data-tab="distribucion">Distribución</button>
       <button class="tab" data-tab="calendario">Calendario</button>
+      <button class="tab" data-tab="olas">Olas</button>
+      <button class="tab" data-tab="records">Récords</button>
       <button class="tab" data-tab="duelo">Dos estaciones</button>
     </nav>
 
@@ -353,6 +355,43 @@
       <p id="ca-note" class="note"></p>
     </section>
 
+
+    <!-- ---- TAB: OLAS ---- -->
+    <section id="panel-olas" class="panel" hidden>
+      <div class="controls">
+        <div class="control">
+          <label class="field-label" for="ol-tipo">Tipo</label>
+          <select id="ol-tipo">
+            <option value="calor" selected>Ola de calor (Tmax)</option>
+            <option value="frio">Ola de frío (Tmin)</option>
+          </select>
+        </div>
+        <div class="control control-wide">
+          <label class="field-label" for="ol-def">Definición</label>
+          <select id="ol-def">
+            <option value="movil" selected>Percentil móvil: ventana de 21 días sobre el período de referencia</option>
+            <option value="oficial">Oficial AEMET adaptada: P fijo de jul–ago (calor) / ene–feb (frío) de 1971–2000</option>
+          </select>
+        </div>
+        <button id="ol-run" class="btn">Calcular</button>
+      </div>
+      <div id="plot-olas" class="plot"></div>
+      <p id="ol-note" class="note"></p>
+    </section>
+
+    <!-- ---- TAB: RÉCORDS ---- -->
+    <section id="panel-records" class="panel" hidden>
+      <div class="controls">
+        <div class="control">
+          <label class="field-label" for="re-skip">Décadas iniciales excluidas <span id="re-skip-val" class="mono">1</span></label>
+          <input type="range" id="re-skip" min="0" max="3" value="1">
+        </div>
+        <button id="re-run" class="btn">Calcular</button>
+      </div>
+      <div id="plot-records" class="plot"></div>
+      <p id="re-note" class="note"></p>
+    </section>
+
     <!-- ---- TAB: DOS ESTACIONES ---- -->
     <section id="panel-duelo" class="panel" hidden>
       <div class="controls">
@@ -388,6 +427,6 @@
   </main>
 </div>
 
-<script src="js/app.js?v=5"></script>
+<script src="js/app.js?v=6"></script>
 </body>
 </html>
