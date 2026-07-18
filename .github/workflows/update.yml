@@ -35,11 +35,11 @@ jobs:
         run: |
           git config user.name "aemet-bot"
           git config user.email "actions@users.noreply.github.com"
-          if git diff --quiet data/recent.json; then
+          git add data/recent.json
+          if git diff --cached --quiet; then
             echo "Sin cambios."
             exit 0
           fi
-          git add data/recent.json
           MSG="data: update recent [bot]"
           if [ "$(git log -1 --pretty=%s)" = "$MSG" ]; then
             git commit --amend -m "$MSG"
