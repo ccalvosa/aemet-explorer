@@ -1248,6 +1248,56 @@ async function runDuel() {
     " Ojo con cambios de emplazamiento o instrumentación: las series no están homogeneizadas.";
 }
 
+
+// ==========================================================
+// Exportar PNG para redes
+// ==========================================================
+
+const EXPORT_SIZES = {
+  "plot-comparador": [1500, 1500],
+  "plot-stripes": [1600, 500],
+  "plot-stripes-anom": [1600, 800],
+  "plot-rachas": [1600, 900],
+  "plot-duelo": [1600, 800],
+  "plot-duelo-diff": [1600, 800],
+};
+
+async function exportActivePanel() {
+  const panel = document.querySelector(".panel:not([hidden])");
+  if (!panel || !state.station) return;
+  const plots = [...panel.querySelectorAll(".plot")].filter((d) => d.data && d.data.length);
+  if (!plots.length) return;
+  const btn = $("export-png");
+  btn.disabled = true; btn.textContent = "…";
+  try {
+    for (const div of plots) {
+      const [w, hgt] = EXPORT_SIZES[div.id] || [1600, 1000];
+      const data = JSON.parse(JSON.stringify(div.data));
+      const layout = JSON.parse(JSON.stringify(div.layout));
+      layout.width = w; layout.height = hgt;
+      layout.font = { ...(layout.font || {}), size: 22 };
+      if (layout.title) layout.title.font = { family: "Space Grotesk, sans-serif", size: 32 };
+      layout.margin = { l: 100, r: 70, t: layout.title ? 110 : 60, b: 150 };
+      layout.annotations = (layout.annotations || []).concat([
+        { text: "<b>@MeteoZGZ</b>", xref: "paper", yref: "paper", x: 0, y: 0,
+          xanchor: "left", yshift: -110, showarrow: false,
+          font: { size: 26, color: "#e6edf3" } },
+        { text: "Datos: AEMET OpenData · ccalvosa.github.io/aemet-explorer",
+          xref: "paper", yref: "paper", x: 1, y: 0, xanchor: "right", yshift: -110,
+          showarrow: false, font: { size: 17, color: "#8b949e" } },
+      ]);
+      const url = await Plotly.toImage({ data, layout }, {
+        format: "png", width: w, height: hgt, scale: 2 });
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${state.station.json.id}_${div.id.replace("plot-", "")}.png`;
+      a.click();
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = "PNG ↓";
+  }
+}
+
 // ==========================================================
 // init
 // ==========================================================
@@ -1286,7 +1336,12 @@ function bindControls() {
   }
 }
 
+function bindExport() {
+  $("export-png").addEventListener("click", exportActivePanel);
+}
+
 async function init() {
+  bindExport();
   setupTabs();
   bindControls();
   populateIndices();

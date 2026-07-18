@@ -464,3 +464,11 @@ input[type="range"] { width: 150px; accent-color: var(--tmax); }
 /* stripes */
 .plot-stripes { height: 190px; }
 
+
+/* botón exportar */
+.btn-export {
+  margin-left: auto;
+  align-self: center;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.8rem;
+}
