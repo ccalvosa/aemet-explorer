@@ -573,8 +573,8 @@ function runStripes() {
   l1.margin = { l: 30, r: 20, t: 40, b: 30 };
   l1.yaxis = { visible: false };
   Plotly.newPlot("plot-stripes", [{
-    x: allYears, y: allYears.map(() => ""), z: [anoms], type: "heatmap",
-    transpose: true, colorscale: "RdBu", reversescale: true,
+    x: allYears, y: [""], z: [anoms], type: "heatmap",
+    colorscale: "RdBu", reversescale: false,
     zmin: -amax, zmax: amax, showscale: false,
     hovertemplate: "%{x}: %{z:+.2f} °C<extra></extra>",
   }], l1, PLOTLY_CFG);
@@ -584,7 +584,7 @@ function runStripes() {
   l2.yaxis.title = { text: "anomalía (°C)" };
   Plotly.newPlot("plot-stripes-anom", [{
     x: allYears, y: anoms, type: "bar",
-    marker: { color: anoms, colorscale: "RdBu", reversescale: true, cmin: -amax, cmax: amax },
+    marker: { color: anoms, colorscale: "RdBu", reversescale: false, cmin: -amax, cmax: amax },
     hovertemplate: "%{x}: %{y:+.2f} °C<extra></extra>",
   }], l2, PLOTLY_CFG);
 
@@ -948,7 +948,7 @@ function runCalendar() {
   Plotly.newPlot("plot-calendario", [{
     x: Array.from({ length: 31 }, (_, i) => i + 1),
     y: MESES.slice(1), z, text: txt, type: "heatmap",
-    colorscale: modeAnom ? "RdBu" : "Plasma", reversescale: modeAnom,
+    colorscale: modeAnom ? "RdBu" : "Plasma", reversescale: false,
     zmin: modeAnom ? -amax : undefined, zmax: modeAnom ? amax : undefined,
     zmid: modeAnom ? 0 : undefined,
     hovertemplate: "%{text}<extra></extra>",
@@ -1007,7 +1007,7 @@ async function runDuel() {
   l2.showlegend = false;
   const traces2 = [{
     x: common, y: diffs, type: "bar",
-    marker: { color: diffs, colorscale: "RdBu", reversescale: true, cmid: 0 },
+    marker: { color: diffs, colorscale: "RdBu", reversescale: false, cmid: 0 },
     hovertemplate: "%{x}: %{y:+.2f} °C<extra></extra>",
   }];
   const fit = ols(common, diffs);
