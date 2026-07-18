@@ -512,3 +512,5 @@ input[type="range"] { width: 150px; accent-color: var(--tmax); }
   font-weight: 600;
   cursor: pointer;
 }
+
+.map-modal[hidden] { display: none !important; }
