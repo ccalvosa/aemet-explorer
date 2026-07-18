@@ -39,3 +39,22 @@ Rejilla diaria densa desde `start`: arrays alineados a días consecutivos con
 
 Datos elaborados a partir de AEMET OpenData (© AEMET), reutilización permitida
 con atribución.
+
+## v2 — productos
+
+Nueve análisis: año en curso vs climatología (sobre P5–P95 del período de
+referencia), evolución anual, warming stripes, índices climáticos (noches
+tropicales, heladas, primer 30/35/40 °C, duración del verano...), rachas,
+comparador de años, distribución por períodos (histograma/ECDF), calendario
+anual de anomalías y comparador de dos estaciones. Período de referencia
+global configurable (1991–2020 por defecto). Efemérides del día en la placa
+de estación.
+
+## Mapa de estaciones
+
+Requiere `data/coords.json`:
+
+```bash
+export AEMET_API_KEY="tu_api_key"
+python scripts/build_coords.py --output data/coords.json
+```

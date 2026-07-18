@@ -4,12 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Explorador climático AEMET</title>
-<meta name="description" content="Análisis interactivo de series diarias de estaciones de AEMET: evolución de temperaturas, rachas y comparador de años.">
+<meta name="description" content="Análisis interactivo de series diarias de estaciones de AEMET: evolución, rachas, stripes, índices climáticos, comparadores y más.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="css/style.css">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 
@@ -18,7 +20,7 @@
     <span class="brand-mark">▲</span>
     <h1>Explorador climático <span class="brand-accent">AEMET</span></h1>
   </div>
-  <p class="tagline">Series diarias · 920 estaciones · análisis en tu navegador</p>
+  <p class="tagline">Series diarias · análisis en tu navegador</p>
 </header>
 
 <div class="layout">
@@ -30,6 +32,17 @@
       <input type="text" id="station-search" placeholder="Nombre, provincia o indicativo…"
              autocomplete="off" spellcheck="false">
       <ul id="search-results" class="search-results" hidden></ul>
+      <button id="map-open" class="btn btn-ghost">Ver mapa de estaciones</button>
+    </section>
+
+    <section class="ref-box">
+      <span class="field-label">Período de referencia</span>
+      <div class="inline">
+        <input type="number" id="ref-start" class="mono yr-input" value="1991" min="1900" max="2100">
+        <span class="sep">–</span>
+        <input type="number" id="ref-end" class="mono yr-input" value="2020" min="1900" max="2100">
+      </div>
+      <p class="hint">Base de anomalías, percentiles y efemérides. Estándar OMM: 1991–2020.</p>
     </section>
 
     <section id="station-plate" class="station-plate" hidden>
@@ -46,6 +59,8 @@
         <div id="coverage-strips"></div>
         <p class="coverage-legend">cada franja: % de días con dato por año</p>
       </div>
+
+      <div id="ephemeris" class="ephemeris"></div>
     </section>
 
     <section id="sidebar-empty" class="sidebar-empty">
@@ -63,18 +78,49 @@
   <main class="main">
 
     <nav class="tabs" id="tabs" hidden>
-      <button class="tab active" data-tab="evolucion">Evolución</button>
+      <button class="tab active" data-tab="anio">Año en curso</button>
+      <button class="tab" data-tab="evolucion">Evolución</button>
+      <button class="tab" data-tab="stripes">Stripes</button>
+      <button class="tab" data-tab="indices">Índices</button>
       <button class="tab" data-tab="rachas">Rachas</button>
-      <button class="tab" data-tab="comparador">Comparador de años</button>
+      <button class="tab" data-tab="comparador">Comparador</button>
+      <button class="tab" data-tab="distribucion">Distribución</button>
+      <button class="tab" data-tab="calendario">Calendario</button>
+      <button class="tab" data-tab="duelo">Dos estaciones</button>
     </nav>
 
     <div id="welcome" class="welcome">
       <h2>Un laboratorio de series climáticas</h2>
-      <p>Elige una estación y explora su registro completo: evolución anual de temperaturas
-         en cualquier ventana del calendario, rachas de días por encima o por debajo de un umbral,
-         y un comparador que sitúa cualquier año frente al resto de la serie.</p>
+      <p>Elige una estación y explora su registro completo: el año en curso frente a la
+         climatología, warming stripes, índices climáticos, rachas, distribuciones por
+         períodos y comparadores entre años y entre estaciones.</p>
       <p class="hint">Todo el cálculo ocurre en tu navegador. Ningún dato sale de esta página.</p>
     </div>
+
+    <!-- ---- TAB: AÑO EN CURSO ---- -->
+    <section id="panel-anio" class="panel" hidden>
+      <div class="controls">
+        <div class="control">
+          <label class="field-label" for="an-var">Variable</label>
+          <select id="an-var">
+            <option value="tmed" selected>Tmed (media acumulada)</option>
+            <option value="tmax">Tmax (media acumulada)</option>
+            <option value="tmin">Tmin (media acumulada)</option>
+            <option value="prec">Precipitación (acumulada)</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="an-year">Año</label>
+          <select id="an-year" class="mono"></select>
+        </div>
+        <div class="control" id="an-hydro-wrap" hidden>
+          <label class="chk"><input type="checkbox" id="an-hydro"> Año hidrológico (oct–sep)</label>
+        </div>
+        <button id="an-run" class="btn">Calcular</button>
+      </div>
+      <div id="plot-anio" class="plot"></div>
+      <p id="an-note" class="note"></p>
+    </section>
 
     <!-- ---- TAB: EVOLUCIÓN ---- -->
     <section id="panel-evolucion" class="panel" hidden>
@@ -106,6 +152,53 @@
       </div>
       <div id="plot-evolucion" class="plot"></div>
       <p id="ev-note" class="note"></p>
+    </section>
+
+    <!-- ---- TAB: STRIPES ---- -->
+    <section id="panel-stripes" class="panel" hidden>
+      <div class="controls">
+        <div class="control">
+          <label class="field-label" for="st-var">Variable</label>
+          <select id="st-var">
+            <option value="tmed" selected>Tmed</option>
+            <option value="tmax">Tmax</option>
+            <option value="tmin">Tmin</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="st-md-start">Ventana del calendario</label>
+          <div class="inline">
+            <input type="text" id="st-md-start" class="mono md-input" value="01-01">
+            <span class="sep">→</span>
+            <input type="text" id="st-md-end" class="mono md-input" value="12-31">
+          </div>
+        </div>
+        <div class="control">
+          <label class="field-label" for="st-cov">Cobertura mínima <span id="st-cov-val" class="mono">80%</span></label>
+          <input type="range" id="st-cov" min="50" max="100" value="80">
+        </div>
+        <button id="st-run" class="btn">Calcular</button>
+      </div>
+      <div id="plot-stripes" class="plot plot-stripes"></div>
+      <div id="plot-stripes-anom" class="plot plot-half"></div>
+      <p id="st-note" class="note"></p>
+    </section>
+
+    <!-- ---- TAB: ÍNDICES ---- -->
+    <section id="panel-indices" class="panel" hidden>
+      <div class="controls">
+        <div class="control control-wide">
+          <label class="field-label" for="ix-index">Índice</label>
+          <select id="ix-index"></select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="ix-cov">Cobertura mínima <span id="ix-cov-val" class="mono">90%</span></label>
+          <input type="range" id="ix-cov" min="50" max="100" value="90">
+        </div>
+        <button id="ix-run" class="btn">Calcular</button>
+      </div>
+      <div id="plot-indices" class="plot"></div>
+      <p id="ix-note" class="note"></p>
     </section>
 
     <!-- ---- TAB: RACHAS ---- -->
@@ -187,7 +280,127 @@
       <p id="co-note" class="note"></p>
     </section>
 
+    <!-- ---- TAB: DISTRIBUCIÓN ---- -->
+    <section id="panel-distribucion" class="panel" hidden>
+      <div class="controls">
+        <div class="control">
+          <label class="field-label" for="di-var">Variable</label>
+          <select id="di-var">
+            <option value="tmax" selected>Tmax</option>
+            <option value="tmed">Tmed</option>
+            <option value="tmin">Tmin</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="di-md-start">Ventana del calendario</label>
+          <div class="inline">
+            <input type="text" id="di-md-start" class="mono md-input" value="06-01">
+            <span class="sep">→</span>
+            <input type="text" id="di-md-end" class="mono md-input" value="08-31">
+          </div>
+        </div>
+        <div class="control">
+          <label class="field-label">Período A</label>
+          <div class="inline">
+            <input type="number" id="di-a1" class="mono yr-input" value="1961">
+            <span class="sep">–</span>
+            <input type="number" id="di-a2" class="mono yr-input" value="1990">
+          </div>
+        </div>
+        <div class="control">
+          <label class="field-label">Período B</label>
+          <div class="inline">
+            <input type="number" id="di-b1" class="mono yr-input" value="1996">
+            <span class="sep">–</span>
+            <input type="number" id="di-b2" class="mono yr-input" value="2025">
+          </div>
+        </div>
+        <div class="control">
+          <label class="field-label" for="di-mode">Vista</label>
+          <select id="di-mode">
+            <option value="hist" selected>Histograma</option>
+            <option value="ecdf">ECDF</option>
+          </select>
+        </div>
+        <button id="di-run" class="btn">Calcular</button>
+      </div>
+      <div id="plot-distribucion" class="plot"></div>
+      <p id="di-note" class="note"></p>
+    </section>
+
+    <!-- ---- TAB: CALENDARIO ---- -->
+    <section id="panel-calendario" class="panel" hidden>
+      <div class="controls">
+        <div class="control">
+          <label class="field-label" for="ca-year">Año</label>
+          <select id="ca-year" class="mono"></select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="ca-var">Variable</label>
+          <select id="ca-var">
+            <option value="tmed" selected>Tmed</option>
+            <option value="tmax">Tmax</option>
+            <option value="tmin">Tmin</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="ca-mode">Mostrar</label>
+          <select id="ca-mode">
+            <option value="anom" selected>Anomalía vs referencia</option>
+            <option value="abs">Valor absoluto</option>
+          </select>
+        </div>
+        <button id="ca-run" class="btn">Calcular</button>
+      </div>
+      <div id="plot-calendario" class="plot"></div>
+      <p id="ca-note" class="note"></p>
+    </section>
+
+    <!-- ---- TAB: DOS ESTACIONES ---- -->
+    <section id="panel-duelo" class="panel" hidden>
+      <div class="controls">
+        <div class="control control-wide search-box">
+          <label class="field-label" for="du-search">Segunda estación</label>
+          <input type="text" id="du-search" placeholder="Nombre, provincia o indicativo…"
+                 autocomplete="off" spellcheck="false">
+          <ul id="du-results" class="search-results" hidden></ul>
+        </div>
+        <div class="control">
+          <label class="field-label" for="du-var">Variable</label>
+          <select id="du-var">
+            <option value="tmed" selected>Tmed</option>
+            <option value="tmax">Tmax</option>
+            <option value="tmin">Tmin</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="du-md-start">Ventana del calendario</label>
+          <div class="inline">
+            <input type="text" id="du-md-start" class="mono md-input" value="01-01">
+            <span class="sep">→</span>
+            <input type="text" id="du-md-end" class="mono md-input" value="12-31">
+          </div>
+        </div>
+        <button id="du-run" class="btn">Calcular</button>
+      </div>
+      <div id="plot-duelo" class="plot plot-half"></div>
+      <div id="plot-duelo-diff" class="plot plot-half"></div>
+      <p id="du-note" class="note"></p>
+    </section>
+
   </main>
+</div>
+
+<!-- ============ MODAL MAPA ============ -->
+<div id="map-modal" class="map-modal" hidden>
+  <div class="map-card">
+    <div class="map-head">
+      <h3>Estaciones</h3>
+      <button id="map-close" class="btn btn-ghost">Cerrar</button>
+    </div>
+    <div id="map" class="map-container"></div>
+    <p id="map-note" class="note map-note"></p>
+  </div>
 </div>
 
 <script src="js/app.js"></script>
