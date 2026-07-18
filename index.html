@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Explorador climático AEMET</title>
+<meta name="description" content="Análisis interactivo de series diarias de estaciones de AEMET: evolución de temperaturas, rachas y comparador de años.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">▲</span>
+    <h1>Explorador climático <span class="brand-accent">AEMET</span></h1>
+  </div>
+  <p class="tagline">Series diarias · 920 estaciones · análisis en tu navegador</p>
+</header>
+
+<div class="layout">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <section class="search-box">
+      <label for="station-search" class="field-label">Estación</label>
+      <input type="text" id="station-search" placeholder="Nombre, provincia o indicativo…"
+             autocomplete="off" spellcheck="false">
+      <ul id="search-results" class="search-results" hidden></ul>
+    </section>
+
+    <section id="station-plate" class="station-plate" hidden>
+      <div class="plate-head">
+        <span id="plate-id" class="plate-id mono"></span>
+        <span id="plate-alt" class="plate-alt mono"></span>
+      </div>
+      <h2 id="plate-name" class="plate-name"></h2>
+      <p id="plate-province" class="plate-province"></p>
+      <p id="plate-period" class="plate-period mono"></p>
+
+      <div class="coverage-block">
+        <p class="field-label">Cobertura por variable</p>
+        <div id="coverage-strips"></div>
+        <p class="coverage-legend">cada franja: % de días con dato por año</p>
+      </div>
+    </section>
+
+    <section id="sidebar-empty" class="sidebar-empty">
+      <p>Busca una estación para empezar.</p>
+      <p class="hint">Prueba «Zaragoza», «Retiro» o un indicativo como <span class="mono">9434</span>.</p>
+    </section>
+
+    <footer class="sidebar-foot">
+      <p>Datos: <a href="https://opendata.aemet.es" target="_blank" rel="noopener">AEMET OpenData</a> · reutilización con atribución</p>
+      <p>Hecho por <a href="https://x.com/MeteoZGZ" target="_blank" rel="noopener">@MeteoZGZ</a></p>
+    </footer>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+
+    <nav class="tabs" id="tabs" hidden>
+      <button class="tab active" data-tab="evolucion">Evolución</button>
+      <button class="tab" data-tab="rachas">Rachas</button>
+      <button class="tab" data-tab="comparador">Comparador de años</button>
+    </nav>
+
+    <div id="welcome" class="welcome">
+      <h2>Un laboratorio de series climáticas</h2>
+      <p>Elige una estación y explora su registro completo: evolución anual de temperaturas
+         en cualquier ventana del calendario, rachas de días por encima o por debajo de un umbral,
+         y un comparador que sitúa cualquier año frente al resto de la serie.</p>
+      <p class="hint">Todo el cálculo ocurre en tu navegador. Ningún dato sale de esta página.</p>
+    </div>
+
+    <!-- ---- TAB: EVOLUCIÓN ---- -->
+    <section id="panel-evolucion" class="panel" hidden>
+      <div class="controls">
+        <div class="control">
+          <span class="field-label">Variables</span>
+          <div class="check-row">
+            <label class="chk chk-tmax"><input type="checkbox" id="ev-tmax" checked> Tmax</label>
+            <label class="chk chk-tmed"><input type="checkbox" id="ev-tmed" checked> Tmed</label>
+            <label class="chk chk-tmin"><input type="checkbox" id="ev-tmin" checked> Tmin</label>
+          </div>
+        </div>
+        <div class="control">
+          <label class="field-label" for="ev-md-start">Ventana del calendario</label>
+          <div class="inline">
+            <input type="text" id="ev-md-start" class="mono md-input" value="01-01" title="MM-DD inicio">
+            <span class="sep">→</span>
+            <input type="text" id="ev-md-end" class="mono md-input" value="12-31" title="MM-DD fin">
+          </div>
+        </div>
+        <div class="control">
+          <label class="field-label" for="ev-cov">Cobertura mínima <span id="ev-cov-val" class="mono">80%</span></label>
+          <input type="range" id="ev-cov" min="50" max="100" value="80">
+        </div>
+        <div class="control">
+          <label class="chk"><input type="checkbox" id="ev-smooth" checked> Media móvil 10 años</label>
+        </div>
+        <button id="ev-run" class="btn">Calcular</button>
+      </div>
+      <div id="plot-evolucion" class="plot"></div>
+      <p id="ev-note" class="note"></p>
+    </section>
+
+    <!-- ---- TAB: RACHAS ---- -->
+    <section id="panel-rachas" class="panel" hidden>
+      <div class="controls">
+        <div class="control">
+          <label class="field-label" for="ra-var">Variable</label>
+          <select id="ra-var">
+            <option value="tmax">Tmax</option>
+            <option value="tmin">Tmin</option>
+            <option value="tmed">Tmed</option>
+            <option value="prec">Precipitación</option>
+            <option value="racha">Racha viento</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="ra-op">Condición</label>
+          <div class="inline">
+            <select id="ra-op">
+              <option value=">=">≥</option>
+              <option value=">">&gt;</option>
+              <option value="<=">≤</option>
+              <option value="<">&lt;</option>
+            </select>
+            <input type="number" id="ra-thr" class="mono thr-input" value="35" step="0.5">
+            <span id="ra-unit" class="unit">°C</span>
+          </div>
+        </div>
+        <button id="ra-run" class="btn">Calcular</button>
+      </div>
+      <div class="split">
+        <div>
+          <h3 class="block-title">Días por año que cumplen la condición</h3>
+          <div id="plot-rachas" class="plot plot-half"></div>
+        </div>
+        <div>
+          <h3 class="block-title">Rachas más largas de la serie</h3>
+          <div class="table-wrap">
+            <table id="ra-table" class="data-table">
+              <thead><tr><th>#</th><th>Días</th><th>Inicio</th><th>Fin</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <p id="ra-note" class="note"></p>
+    </section>
+
+    <!-- ---- TAB: COMPARADOR ---- -->
+    <section id="panel-comparador" class="panel" hidden>
+      <div class="controls">
+        <div class="control">
+          <label class="field-label" for="co-year">Año de referencia</label>
+          <select id="co-year" class="mono"></select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="co-x">Eje X</label>
+          <select id="co-x">
+            <option value="tmin">Tmin media</option>
+            <option value="tmed" selected>Tmed media</option>
+            <option value="tmax">Tmax media</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="co-y">Eje Y</label>
+          <select id="co-y">
+            <option value="tmin">Tmin media</option>
+            <option value="tmed">Tmed media</option>
+            <option value="tmax" selected>Tmax media</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="co-cov">Cobertura mínima <span id="co-cov-val" class="mono">90%</span></label>
+          <input type="range" id="co-cov" min="50" max="100" value="90">
+        </div>
+        <button id="co-run" class="btn">Calcular</button>
+      </div>
+      <div id="plot-comparador" class="plot plot-tall"></div>
+      <p id="co-note" class="note"></p>
+    </section>
+
+  </main>
+</div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
