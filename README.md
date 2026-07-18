@@ -58,3 +58,10 @@ Requiere `data/coords.json`:
 export AEMET_API_KEY="tu_api_key"
 python scripts/build_coords.py --output data/coords.json
 ```
+
+## Licencia
+
+El código de este repositorio se distribuye bajo licencia MIT (ver `LICENSE`).
+Los datos de `data/` NO están cubiertos por esa licencia: son información
+elaborada por la Agencia Estatal de Meteorología (© AEMET), reutilizable
+conforme a su aviso legal, citando a AEMET como fuente de los datos originales.
