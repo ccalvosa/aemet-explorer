@@ -18,10 +18,10 @@
   --tmed: #f7c948;
   --tmin: #4dabf7;
   --accent: #ff4d4d;
-  --radius: 10px;
-  --font-display: "Space Grotesk", sans-serif;
-  --font-body: "Inter", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --radius: 3px;
+  --font-display: "IBM Plex Serif", Georgia, serif;
+  --font-body: "IBM Plex Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -62,8 +62,8 @@ a:hover { text-decoration: underline; }
 
 .topbar h1 {
   font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: 1.3rem;
+  font-weight: 600;
   letter-spacing: 0.01em;
 }
 
@@ -94,7 +94,7 @@ a:hover { text-decoration: underline; }
 /* ---------- search ---------- */
 .field-label {
   display: block;
-  font-family: var(--font-display);
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   font-weight: 500;
   text-transform: uppercase;
@@ -154,8 +154,9 @@ input:focus-visible, select:focus-visible, button:focus-visible {
 
 /* ---------- station plate (elemento firma) ---------- */
 .station-plate {
-  background: linear-gradient(160deg, var(--panel) 0%, var(--panel-2) 100%);
+  background: var(--panel);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--tmax);
   border-radius: var(--radius);
   padding: 1rem;
 }
@@ -255,8 +256,10 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   background: none;
   border: none;
   color: var(--muted);
-  font-family: var(--font-display);
-  font-size: 0.92rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   font-weight: 500;
   padding: 0.55rem 0.9rem;
   cursor: pointer;
@@ -328,10 +331,12 @@ input[type="range"] { width: 150px; accent-color: var(--tmax); }
   color: #1a0e06;
   border: none;
   border-radius: var(--radius);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.9rem;
-  padding: 0.55rem 1.2rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.55rem 1.1rem;
   cursor: pointer;
   transition: filter 0.15s;
 }
@@ -373,7 +378,7 @@ input[type="range"] { width: 150px; accent-color: var(--tmax); }
 }
 
 .data-table th {
-  font-family: var(--font-display);
+  font-family: var(--font-mono);
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
