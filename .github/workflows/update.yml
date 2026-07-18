@@ -1,0 +1,50 @@
+name: update-data
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # 06:00 UTC diario (los diarios de AEMET consolidan con días de retraso)
+  workflow_dispatch: {}    # permite lanzarlo a mano desde la pestaña Actions
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2   # necesario para poder amendar el commit anterior
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      - name: Descargar ventana reciente de AEMET
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+        run: python scripts/update_recent.py --index data/index.json --output data/recent.json
+
+      - name: Commit (amendando el del bot anterior para no engordar el historial)
+        run: |
+          git config user.name "aemet-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if git diff --quiet data/recent.json; then
+            echo "Sin cambios."
+            exit 0
+          fi
+          git add data/recent.json
+          MSG="data: update recent [bot]"
+          if [ "$(git log -1 --pretty=%s)" = "$MSG" ]; then
+            git commit --amend -m "$MSG"
+            git push --force-with-lease
+          else
+            git commit -m "$MSG"
+            git push
+          fi

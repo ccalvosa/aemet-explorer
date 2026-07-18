@@ -251,9 +251,46 @@ function makeSearch(inputEl, listEl, onPick) {
 // Selección de estación, placa y efemérides
 // ==========================================================
 
+async function loadRecent() {
+  if (state.recentTried) return;
+  state.recentTried = true;
+  try {
+    const r = await fetch(`${DATA_URL}/recent.json`);
+    if (r.ok) state.recent = await r.json();
+  } catch { /* sin recent: la web funciona con el histórico */ }
+}
+
+/** Fusiona la ventana reciente sobre el JSON histórico (recent manda). */
+function mergeRecent(json) {
+  const R = state.recent;
+  if (!R || !R.stations[json.id]) return json;
+  const rec = R.stations[json.id];
+  const stStart = Date.parse(json.start + "T00:00:00Z");
+  const stEnd = Date.parse(json.end + "T00:00:00Z");
+  const rStart = Date.parse(R.start + "T00:00:00Z");
+  const rEnd = Date.parse(R.end + "T00:00:00Z");
+  const newEnd = Math.max(stEnd, rEnd);
+  const extra = Math.round((newEnd - stEnd) / MS_DAY);
+  if (extra > 0) {
+    for (const v of json.vars) json.data[v].push(...new Array(extra).fill(null));
+    json.end = new Date(newEnd).toISOString().slice(0, 10);
+  }
+  const nR = Math.round((rEnd - rStart) / MS_DAY) + 1;
+  for (let k = 0; k < nR; k++) {
+    const idx = Math.round((rStart - stStart) / MS_DAY) + k;
+    if (idx < 0) continue;
+    for (const v of json.vars) {
+      const val = rec[v] ? rec[v][k] : null;
+      if (val !== null && val !== undefined) json.data[v][idx] = val;
+    }
+  }
+  return json;
+}
+
 async function loadStation(id) {
+  await loadRecent();
   const res = await fetch(`${DATA_URL}/stations/${id}.json`);
-  return makeCalendar(await res.json());
+  return makeCalendar(mergeRecent(await res.json()));
 }
 
 async function selectStation(id) {
