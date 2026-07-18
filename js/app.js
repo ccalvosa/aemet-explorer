@@ -51,8 +51,6 @@ const state = {
   index: null,
   station: null,   // { json, years, md, startMs, yearList }
   stationB: null,  // segunda estación para "Dos estaciones"
-  coords: null,    // {id: [lat, lon]}
-  map: null,
 };
 
 // ---------- helpers ----------
@@ -248,46 +246,6 @@ function makeSearch(inputEl, listEl, onPick) {
     if (!e.target.closest(".search-box")) listEl.hidden = true;
   });
 }
-
-async function openMap() {
-  $("map-modal").hidden = false;
-  if (!state.map) {
-    state.map = L.map("map", { zoomSnap: 0.5 }).setView([40.2, -3.7], 5.5);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-      maxZoom: 12,
-    }).addTo(state.map);
-  }
-  setTimeout(() => state.map.invalidateSize(), 100);
-  if (state.coords) return;
-  try {
-    const res = await fetch(`${DATA_URL}/coords.json`);
-    if (!res.ok) throw new Error();
-    state.coords = await res.json();
-  } catch {
-    $("map-note").textContent =
-      "No hay data/coords.json: genera las coordenadas con scripts/build_coords.py (necesita API key de AEMET).";
-    return;
-  }
-  let plotted = 0;
-  for (const st of state.index.stations) {
-    const c = state.coords[st.id];
-    if (!c) continue;
-    plotted++;
-    const nYears = st.end.slice(0, 4) - st.start.slice(0, 4) + 1;
-    L.circleMarker(c, {
-      radius: 3 + Math.min(4, nYears / 25),
-      color: "#ff7a45", weight: 1, fillColor: "#ff7a45", fillOpacity: 0.55,
-    }).addTo(state.map).bindPopup(
-      `<strong>${st.name}</strong><br><span class="mono">${st.id}</span> · ${st.start.slice(0, 4)}–${st.end.slice(0, 4)}<br>` +
-      `<button onclick="window.__pickStation('${st.id}')">Abrir estación</button>`
-    );
-  }
-  $("map-note").textContent =
-    `${plotted} estaciones con coordenadas. El radio crece con la longitud de la serie.`;
-}
-
-window.__pickStation = (id) => { $("map-modal").hidden = true; selectStation(id); };
 
 // ==========================================================
 // Selección de estación, placa y efemérides
@@ -1103,11 +1061,6 @@ function bindControls() {
       activateTab(document.querySelector(".tab.active").dataset.tab);
     });
   }
-  $("map-open").addEventListener("click", openMap);
-  $("map-close").addEventListener("click", () => { $("map-modal").hidden = true; });
-  $("map-modal").addEventListener("click", (e) => {
-    if (e.target === $("map-modal")) $("map-modal").hidden = true;
-  });
 }
 
 async function init() {

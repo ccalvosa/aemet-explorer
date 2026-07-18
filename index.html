@@ -8,10 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="css/style.css">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 
@@ -32,7 +30,6 @@
       <input type="text" id="station-search" placeholder="Nombre, provincia o indicativo…"
              autocomplete="off" spellcheck="false">
       <ul id="search-results" class="search-results" hidden></ul>
-      <button id="map-open" class="btn btn-ghost">Ver mapa de estaciones</button>
     </section>
 
     <section class="ref-box">
@@ -389,18 +386,6 @@
     </section>
 
   </main>
-</div>
-
-<!-- ============ MODAL MAPA ============ -->
-<div id="map-modal" class="map-modal" hidden>
-  <div class="map-card">
-    <div class="map-head">
-      <h3>Estaciones</h3>
-      <button id="map-close" class="btn btn-ghost">Cerrar</button>
-    </div>
-    <div id="map" class="map-container"></div>
-    <p id="map-note" class="note map-note"></p>
-  </div>
 </div>
 
 <script src="js/app.js"></script>
