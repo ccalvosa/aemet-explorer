@@ -1108,6 +1108,43 @@ function runWaves() {
       hovertemplate: "%{x}: %{y} olas<extra></extra>" },
   ], layout, PLOTLY_CFG);
 
+  // calendario año × día del año: intensidad (|valor - umbral|) en días de ola
+  {
+    const y0c = S.yearList[0], y1c = S.yearList[S.yearList.length - 1];
+    const nY = y1c - y0c + 1;
+    const z = Array.from({ length: nY }, () => new Array(365).fill(null));
+    const txtc = Array.from({ length: nY }, () => new Array(365).fill(""));
+    for (const e of events) {
+      for (let i = e.start; i < e.start + e.len; i++) {
+        if (S.md[i] === 229) continue;
+        const pos = MD_IDX_365.get(S.md[i]);
+        const row = S.years[i] - y0c;
+        const intens = Math.abs(values[i] - thr.get(S.md[i]));
+        z[row][pos] = intens;
+        txtc[row][pos] = `${mdLabel(S.md[i])} ${S.years[i]}: ${values[i].toFixed(1)} °C ` +
+          `(${calor ? "+" : "−"}${intens.toFixed(1)} sobre umbral)`;
+      }
+    }
+    const xc = [];
+    {
+      const d = new Date(Date.UTC(2001, 0, 1));
+      for (let p = 0; p < 365; p++) { xc.push(d.toISOString().slice(0, 10)); d.setUTCDate(d.getUTCDate() + 1); }
+    }
+    const lc = baseLayout(`Días en ola de ${calor ? "calor" : "frío"} · color = exceso sobre el umbral`);
+    lc.xaxis.tickformat = "%b";
+    lc.xaxis.dtick = "M1";
+    lc.yaxis.title = { text: "año" };
+    lc.yaxis.autorange = "reversed";
+    lc.yaxis.dtick = 10;
+    Plotly.newPlot("plot-olas-cal", [{
+      x: xc, y: Array.from({ length: nY }, (_, k) => y0c + k), z,
+      type: "heatmap", colorscale: calor ? "Reds" : "Blues",
+      text: txtc, hovertemplate: "%{text}<extra></extra>", hoverongaps: false,
+      colorbar: { title: "°C", thickness: 14, outlinecolor: "#2b3340" },
+      zmin: 0,
+    }], lc, PLOTLY_CFG);
+  }
+
   let top = "";
   if (events.length) {
     const e = events[0];
@@ -1260,6 +1297,7 @@ const EXPORT_SIZES = {
   "plot-rachas": [1600, 900],
   "plot-duelo": [1600, 800],
   "plot-duelo-diff": [1600, 800],
+  "plot-olas-cal": [1600, 1200],
 };
 
 async function exportActivePanel() {
