@@ -21,14 +21,14 @@ const MESES = ["", "ene", "feb", "mar", "abr", "may", "jun",
 const PLOTLY_BASE = {
   paper_bgcolor: "#0d1117",
   plot_bgcolor: "#0d1117",
-  font: { family: "IBM Plex Sans, sans-serif", color: "#e6edf3", size: 13 },
+  font: { family: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif", color: "#e6edf3", size: 13 },
   margin: { l: 55, r: 20, t: 40, b: 45 },
   xaxis: { gridcolor: "#2b3340", zerolinecolor: "#2b3340" },
   yaxis: { gridcolor: "#2b3340", zerolinecolor: "#2b3340" },
   hoverlabel: {
     bgcolor: "#1b2330",
     bordercolor: "#2b3340",
-    font: { color: "#ffffff", family: "IBM Plex Sans, sans-serif", size: 13 },
+    font: { color: "#ffffff", family: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif", size: 13 },
   },
 };
 const PLOTLY_CFG = { responsive: true, displaylogo: false };
@@ -56,7 +56,7 @@ const state = {
 // ---------- helpers ----------
 const $ = (id) => document.getElementById(id);
 
-function titleFont() { return { family: "IBM Plex Serif, serif", size: 16 }; }
+function titleFont() { return { family: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", size: 16 }; }
 
 function baseLayout(titleText) {
   const l = structuredClone(PLOTLY_BASE);
@@ -859,7 +859,7 @@ function runComparator() {
   if (ref) traces.push({
     x: [ref.x], y: [ref.y], mode: "markers+text",
     text: [String(refYear)], textposition: "top right",
-    textfont: { color: ACCENT, size: 15, family: "IBM Plex Serif, serif" },
+    textfont: { color: ACCENT, size: 15, family: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif" },
     marker: { color: ACCENT, size: 16, line: { color: "#fff", width: 1.5 } },
     hovertemplate: refYear + "<br>%{x:.2f} °C · %{y:.2f} °C<extra></extra>",
   });
@@ -1276,7 +1276,7 @@ async function exportActivePanel() {
       const layout = JSON.parse(JSON.stringify(div.layout));
       layout.width = w; layout.height = hgt;
       layout.font = { ...(layout.font || {}), size: 22 };
-      if (layout.title) layout.title.font = { family: "IBM Plex Serif, serif", size: 32 };
+      if (layout.title) layout.title.font = { family: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", size: 32 };
       layout.margin = { l: 100, r: 70, t: layout.title ? 110 : 60, b: 150 };
       layout.annotations = (layout.annotations || []).concat([
         { text: "<b>@MeteoZGZ</b>", xref: "paper", yref: "paper", x: 0, y: 0,
