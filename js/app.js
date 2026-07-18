@@ -399,50 +399,7 @@ function runAnio() {
   const hydro = isPrec && $("an-hydro").checked;
   const startMd = hydro ? 1001 : 101;
   const [refA, refB] = getRef();
-
   const M = yearMatrix(S.json.data[v], startMd);
-
-  /** trayectoria acumulada de un año; null a partir de demasiado hueco */
-  function cumTraj(row) {
-    const out = new Array(365).fill(null);
-    let sum = 0, n = 0;
-    for (let p = 0; p < 365; p++) {
-      if (row[p] !== null) { sum += row[p]; n++; }
-      if (n === 0) continue;
-      if (n < 0.8 * (p + 1)) continue; // hueco excesivo hasta la fecha
-      out[p] = isPrec ? sum : sum / n;
-    }
-    return out;
-  }
-
-  // sobre de percentiles del período de referencia
-  const refTraj = [];
-  for (let y = refA; y <= refB; y++) if (M.has(y)) refTraj.push(cumTraj(M.get(y)));
-  if (refTraj.length < 10) {
-    $("an-note").textContent =
-      `Solo ${refTraj.length} años del período ${refA}–${refB} tienen datos: el sobre de percentiles no es fiable. Amplía la referencia.`;
-  } else { $("an-note").textContent = ""; }
-
-  const p05 = [], p50 = [], p95 = [];
-  for (let p = 0; p < 365; p++) {
-    const col = refTraj.map((t) => t[p]).filter((x) => x !== null).sort((a, b) => a - b);
-    p05.push(col.length ? quantile(col, 0.05) : null);
-    p50.push(col.length ? quantile(col, 0.50) : null);
-    p95.push(col.length ? quantile(col, 0.95) : null);
-  }
-
-  // años récord (máx y mín del valor final) sobre toda la serie
-  let recMax = null, recMin = null;
-  for (const [y, row] of M) {
-    const t = cumTraj(row);
-    let last = null;
-    for (let p = 364; p >= 0; p--) if (t[p] !== null && p > 300) { last = t[p]; break; }
-    if (last === null) continue;
-    if (!recMax || last > recMax.v) recMax = { y, v: last, t };
-    if (!recMin || last < recMin.v) recMin = { y, v: last, t };
-  }
-
-  const sel = M.has(year) ? cumTraj(M.get(year)) : null;
 
   // eje x con año ficticio para etiquetas de mes
   const x = [];
@@ -451,39 +408,105 @@ function runAnio() {
     for (let p = 0; p < 365; p++) { x.push(d.toISOString().slice(0, 10)); d.setUTCDate(d.getUTCDate() + 1); }
   }
   const ht = "%{x|%-d %b}: %{y:.1f}";
+  let traces, note = "";
 
-  const traces = [
-    { x, y: p95, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
-    { x, y: p05, mode: "lines", line: { width: 0 }, fill: "tonexty",
-      fillcolor: "rgba(139,148,158,0.22)", name: `P5–P95 ${refA}–${refB}`,
-      hoverinfo: "skip" },
-    { x, y: p50, mode: "lines", name: `mediana ${refA}–${refB}`,
-      line: { color: "#8b949e", width: 1.5, dash: "dash" },
-      hovertemplate: ht + "<extra>mediana</extra>" },
-  ];
-  if (recMax && recMax.y !== year) traces.push({
-    x, y: recMax.t, mode: "lines", name: `récord alto (${recMax.y})`,
-    line: { color: VAR_COLORS.tmax, width: 1 }, opacity: 0.6,
-    hovertemplate: ht + `<extra>${recMax.y}</extra>` });
-  if (recMin && recMin.y !== year) traces.push({
-    x, y: recMin.t, mode: "lines", name: `récord bajo (${recMin.y})`,
-    line: { color: VAR_COLORS.tmin, width: 1 }, opacity: 0.6,
-    hovertemplate: ht + `<extra>${recMin.y}</extra>` });
-  if (sel) traces.push({
-    x, y: sel, mode: "lines", name: String(year),
-    line: { color: ACCENT, width: 3 },
-    hovertemplate: ht + `<extra>${year}</extra>` });
+  if (isPrec) {
+    // ---- precipitación: trayectorias acumuladas ----
+    function cumTraj(row) {
+      const out = new Array(365).fill(null);
+      let sum = 0, n = 0;
+      for (let p = 0; p < 365; p++) {
+        if (row[p] !== null) { sum += row[p]; n++; }
+        if (!n || n < 0.8 * (p + 1)) continue;
+        out[p] = sum;
+      }
+      return out;
+    }
+    const refTraj = [];
+    for (let y = refA; y <= refB; y++) if (M.has(y)) refTraj.push(cumTraj(M.get(y)));
+    if (refTraj.length < 10) note = `Solo ${refTraj.length} años de ${refA}–${refB} con datos: sobre poco fiable. `;
+    const p05 = [], p50 = [], p95 = [];
+    for (let p = 0; p < 365; p++) {
+      const col = refTraj.map((t) => t[p]).filter((z) => z !== null).sort((a, b) => a - b);
+      p05.push(col.length ? quantile(col, 0.05) : null);
+      p50.push(col.length ? quantile(col, 0.50) : null);
+      p95.push(col.length ? quantile(col, 0.95) : null);
+    }
+    let recMax = null, recMin = null;
+    for (const [y, row] of M) {
+      const t = cumTraj(row);
+      let last = null;
+      for (let p = 364; p > 300; p--) if (t[p] !== null) { last = t[p]; break; }
+      if (last === null) continue;
+      if (!recMax || last > recMax.v) recMax = { y, v: last, t };
+      if (!recMin || last < recMin.v) recMin = { y, v: last, t };
+    }
+    const sel = M.has(year) ? cumTraj(M.get(year)) : null;
+    traces = [
+      { x, y: p95, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+      { x, y: p05, mode: "lines", line: { width: 0 }, fill: "tonexty",
+        fillcolor: "rgba(139,148,158,0.22)", name: `P5–P95 ${refA}–${refB}`, hoverinfo: "skip" },
+      { x, y: p50, mode: "lines", name: `mediana ${refA}–${refB}`,
+        line: { color: "#8b949e", width: 1.5, dash: "dash" }, hovertemplate: ht + "<extra>mediana</extra>" },
+    ];
+    if (recMax && recMax.y !== year) traces.push({ x, y: recMax.t, mode: "lines",
+      name: `récord húmedo (${recMax.y})`, line: { color: VAR_COLORS.tmin, width: 1 },
+      opacity: 0.6, hovertemplate: ht + `<extra>${recMax.y}</extra>` });
+    if (recMin && recMin.y !== year) traces.push({ x, y: recMin.t, mode: "lines",
+      name: `récord seco (${recMin.y})`, line: { color: VAR_COLORS.tmax, width: 1 },
+      opacity: 0.6, hovertemplate: ht + `<extra>${recMin.y}</extra>` });
+    if (sel) traces.push({ x, y: sel, mode: "lines", name: String(year),
+      line: { color: ACCENT, width: 3 }, hovertemplate: ht + `<extra>${year}</extra>` });
+    if (!sel) note += `El año no tiene datos suficientes de precipitación.`;
+  } else {
+    // ---- temperatura: valores diarios sobre climatología ±7 días ----
+    const clim = climDaily(S.json.data[v], refA, refB, 7);
+    const p05 = [], p50 = [], p95 = [];
+    for (let p = 0; p < 365; p++) {
+      const pool = clim.sorted.get(MD_SEQ_365[p]);
+      p05.push(pool ? quantile(pool, 0.05) : null);
+      p50.push(pool ? quantile(pool, 0.50) : null);
+      p95.push(pool ? quantile(pool, 0.95) : null);
+    }
+    if (![...clim.sorted.values()].length) note = "Sin datos en el período de referencia. ";
+    // récords diarios absolutos de toda la serie (mes-día exacto)
+    const rMax = new Array(365).fill(null), rMin = new Array(365).fill(null);
+    for (const [, row] of M) {
+      for (let p = 0; p < 365; p++) {
+        if (row[p] === null) continue;
+        if (rMax[p] === null || row[p] > rMax[p]) rMax[p] = row[p];
+        if (rMin[p] === null || row[p] < rMin[p]) rMin[p] = row[p];
+      }
+    }
+    const sel = M.has(year) ? M.get(year) : null;
+    traces = [
+      { x, y: rMax, mode: "lines", name: "récord diario alto",
+        line: { color: VAR_COLORS.tmax, width: 1, dash: "dot" }, opacity: 0.55,
+        hovertemplate: ht + "<extra>récord alto</extra>" },
+      { x, y: rMin, mode: "lines", name: "récord diario bajo",
+        line: { color: VAR_COLORS.tmin, width: 1, dash: "dot" }, opacity: 0.55,
+        hovertemplate: ht + "<extra>récord bajo</extra>" },
+      { x, y: p95, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+      { x, y: p05, mode: "lines", line: { width: 0 }, fill: "tonexty",
+        fillcolor: "rgba(139,148,158,0.25)", name: `P5–P95 ${refA}–${refB}`, hoverinfo: "skip" },
+      { x, y: p50, mode: "lines", name: `mediana ${refA}–${refB}`,
+        line: { color: "#8b949e", width: 1.5, dash: "dash" }, hovertemplate: ht + "<extra>mediana</extra>" },
+    ];
+    if (sel) traces.push({ x, y: sel, mode: "lines", name: String(year),
+      line: { color: ACCENT, width: 1.8 }, connectgaps: false,
+      hovertemplate: ht + `<extra>${year}</extra>` });
+    else note += `El año ${year} no tiene datos de ${VAR_LABELS[v]}.`;
+  }
 
   const yearTxt = hydro ? `${year - 1}–${String(year).slice(2)}` : String(year);
-  const layout = baseLayout(
-    `${S.json.name} · ${VAR_LABELS[v]} ${isPrec ? "acumulada" : "media acumulada"} · ${yearTxt}`);
+  const layout = baseLayout(`${S.json.name} · ${VAR_LABELS[v]} ${isPrec ? "acumulada" : "diaria"} · ${yearTxt}` +
+    (isPrec ? "" : ` · banda ${refA}–${refB} (±7 días)`));
   layout.xaxis.tickformat = "%b";
   layout.xaxis.dtick = "M1";
   layout.yaxis.title = { text: VAR_UNITS[v] };
   layout.legend = { orientation: "h", y: -0.12 };
   Plotly.newPlot("plot-anio", traces, layout, PLOTLY_CFG);
-
-  if (!sel) $("an-note").textContent = `El año ${yearTxt} no tiene datos suficientes de ${VAR_LABELS[v]}.`;
+  $("an-note").textContent = note;
 }
 
 // ==========================================================
