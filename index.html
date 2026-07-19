@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Explorador climático AEMET</title>
 <meta name="description" content="Análisis interactivo de series diarias de estaciones de AEMET: evolución, rachas, stripes, índices climáticos, comparadores y más.">
-<link rel="stylesheet" href="css/style.css?v=11">
+<link rel="stylesheet" href="css/style.css?v=12">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -81,6 +81,8 @@
       <button class="tab" data-tab="distribucion">Distribución</button>
       <button class="tab" data-tab="calendario">Calendario</button>
       <button class="tab" data-tab="olas">Olas</button>
+      <button class="tab" data-tab="periodos">Comparar períodos</button>
+      <button class="tab" data-tab="nacional">Nacional</button>
       <button class="tab" data-tab="records">Récords</button>
       <button class="tab" data-tab="duelo">Dos estaciones</button>
       <button id="export-png" class="btn btn-export" title="Exportar los gráficos de esta pestaña como PNG para redes">PNG ↓</button>
@@ -392,6 +394,69 @@
       <p id="re-note" class="note"></p>
     </section>
 
+
+    <!-- ---- TAB: COMPARAR PERÍODOS ---- -->
+    <section id="panel-periodos" class="panel" hidden>
+      <div class="controls">
+        <div class="control">
+          <label class="field-label" for="pe-var">Variable</label>
+          <select id="pe-var">
+            <option value="tmed" selected>Tmed</option>
+            <option value="tmax">Tmax</option>
+            <option value="tmin">Tmin</option>
+            <option value="prec">Precipitación (acumulada)</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="pe-tipo">Tipo de período</label>
+          <select id="pe-tipo">
+            <option value="mes" selected>Mes</option>
+            <option value="estacion">Estación del año</option>
+            <option value="anio">Año completo</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label">Período A</label>
+          <div class="inline">
+            <select id="pe-a-sub" class="mono"></select>
+            <input type="number" id="pe-a-yr" class="mono yr-input" value="2003">
+          </div>
+        </div>
+        <div class="control">
+          <label class="field-label">Período B</label>
+          <div class="inline">
+            <select id="pe-b-sub" class="mono"></select>
+            <input type="number" id="pe-b-yr" class="mono yr-input" value="2022">
+          </div>
+        </div>
+        <button id="pe-run" class="btn">Calcular</button>
+      </div>
+      <div id="plot-periodos" class="plot"></div>
+      <p id="pe-note" class="note"></p>
+    </section>
+
+    <!-- ---- TAB: NACIONAL ---- -->
+    <section id="panel-nacional" class="panel" hidden>
+      <div class="controls">
+        <div class="control">
+          <label class="field-label" for="na-var">Variable</label>
+          <select id="na-var">
+            <option value="tmed" selected>Tmed (anomalía °C)</option>
+            <option value="tmax">Tmax (anomalía °C)</option>
+            <option value="tmin">Tmin (anomalía °C)</option>
+            <option value="prec">Precipitación (% de la normal)</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="na-min">Mínimo de estaciones <span id="na-min-val" class="mono">50</span></label>
+          <input type="range" id="na-min" min="10" max="200" step="10" value="50">
+        </div>
+        <button id="na-run" class="btn">Calcular</button>
+      </div>
+      <div id="plot-nacional" class="plot"></div>
+      <p id="na-note" class="note"></p>
+    </section>
+
     <!-- ---- TAB: DOS ESTACIONES ---- -->
     <section id="panel-duelo" class="panel" hidden>
       <div class="controls">
@@ -427,6 +492,6 @@
   </main>
 </div>
 
-<script src="js/app.js?v=11"></script>
+<script src="js/app.js?v=12"></script>
 </body>
 </html>

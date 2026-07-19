@@ -420,7 +420,8 @@ function setupTabs() {
 function activateTab(name) {
   document.querySelectorAll(".panel").forEach((p) => { p.hidden = true; });
   $(`panel-${name}`).hidden = false;
-  if (state.station && TAB_RUNNERS[name]) TAB_RUNNERS[name]();
+  if (name === "nacional") $("welcome").hidden = true;
+  if (TAB_RUNNERS[name] && (state.station || name === "nacional")) TAB_RUNNERS[name]();
 }
 
 // ==========================================================
@@ -1216,6 +1217,227 @@ function runRecords() {
     `Las ${skip} primeras décadas se excluyen del conteo (todo es récord al principio) pero sí fijan los récords iniciales.`;
 }
 
+
+// ==========================================================
+// PRODUCTO: Comparar períodos (mes / estación / año, A vs B)
+// ==========================================================
+
+const SEASONS = {
+  MAM: { mdS: 301, mdE: 531, label: "primavera (MAM)" },
+  JJA: { mdS: 601, mdE: 831, label: "verano (JJA)" },
+  SON: { mdS: 901, mdE: 1130, label: "otoño (SON)" },
+  DJF: { mdS: 1201, mdE: 228, label: "invierno (DJF)" },
+};
+
+function populatePeriodSubs() {
+  const tipo = $("pe-tipo").value;
+  for (const sel of [$("pe-a-sub"), $("pe-b-sub")]) {
+    const prev = sel.value;
+    sel.innerHTML = "";
+    if (tipo === "mes") {
+      for (let m = 1; m <= 12; m++) {
+        const o = document.createElement("option");
+        o.value = m; o.textContent = MESES[m];
+        sel.appendChild(o);
+      }
+      sel.value = prev >= 1 && prev <= 12 ? prev : 7;
+    } else if (tipo === "estacion") {
+      for (const [k, s] of Object.entries(SEASONS)) {
+        const o = document.createElement("option");
+        o.value = k; o.textContent = s.label;
+        sel.appendChild(o);
+      }
+      sel.value = SEASONS[prev] ? prev : "JJA";
+    } else {
+      const o = document.createElement("option");
+      o.value = "anio"; o.textContent = "—";
+      sel.appendChild(o);
+    }
+    sel.disabled = tipo === "anio";
+  }
+}
+
+/** Días (índices de rejilla, en orden) de un período tipo/sub/año. */
+function periodDays(tipo, sub, yr) {
+  const S = state.station;
+  let mdS, mdE, label;
+  if (tipo === "mes") {
+    const m = +sub;
+    mdS = m * 100 + 1; mdE = m * 100 + 31;
+    label = `${MESES[m]} ${yr}`;
+  } else if (tipo === "estacion") {
+    ({ mdS, mdE } = SEASONS[sub]);
+    label = `${SEASONS[sub].label} ${mdS > mdE ? (yr - 1) + "–" + String(yr).slice(2) : yr}`;
+  } else {
+    mdS = 101; mdE = 1231; label = String(yr);
+  }
+  const wraps = mdS > mdE;
+  const idx = [];
+  for (let i = 0; i < S.md.length; i++) {
+    const m = S.md[i];
+    const inWin = wraps ? (m >= mdS || m <= mdE) : (m >= mdS && m <= mdE);
+    if (!inWin) continue;
+    const gy = wraps && m >= mdS ? S.years[i] + 1 : S.years[i];
+    if (gy === yr) idx.push(i);
+  }
+  return { idx, label };
+}
+
+function runPeriodos() {
+  const S = state.station;
+  const v = $("pe-var").value;
+  const tipo = $("pe-tipo").value;
+  const isPrec = v === "prec";
+  const values = S.json.data[v];
+  const A = periodDays(tipo, $("pe-a-sub").value, +$("pe-a-yr").value);
+  const B = periodDays(tipo, $("pe-b-sub").value, +$("pe-b-yr").value);
+
+  function series(P) {
+    const y = [], txt = [];
+    let sum = 0, n = 0, mx = -Infinity, mn = Infinity;
+    for (const i of P.idx) {
+      const val = values[i];
+      if (val !== null) {
+        sum += val; n++;
+        if (val > mx) mx = val;
+        if (val < mn) mn = val;
+      }
+      y.push(val === null ? null : (isPrec ? sum : val));
+      txt.push(fmtDate(S.startMs, i));
+    }
+    return { y, txt, n, mean: n ? sum / n : null, sum, mx, mn };
+  }
+  const sa = series(A), sb = series(B);
+  if (!sa.n || !sb.n) {
+    $("pe-note").textContent = `Sin datos: ${A.label} (${sa.n} días válidos), ${B.label} (${sb.n}).`;
+    Plotly.purge("plot-periodos"); return;
+  }
+
+  const layout = baseLayout(`${S.json.name} · ${VAR_LABELS[v]} · ${A.label} vs ${B.label}`);
+  layout.xaxis.title = { text: "día del período" };
+  layout.yaxis.title = { text: isPrec ? "mm acumulados" : "°C" };
+  layout.legend = { orientation: "h", y: -0.15 };
+  const mk = (s, P, color) => ({
+    x: s.y.map((_, k) => k + 1), y: s.y, mode: "lines", name: P.label,
+    line: { color, width: 2 }, connectgaps: false, text: s.txt,
+    hovertemplate: "%{text}: %{y:.1f}<extra>" + P.label + "</extra>",
+  });
+  Plotly.newPlot("plot-periodos",
+    [mk(sa, A, "#4dabf7"), mk(sb, B, "#ff7a45")], layout, PLOTLY_CFG);
+
+  const d = (x) => x.toFixed(1);
+  $("pe-note").textContent = isPrec
+    ? `Total: ${A.label} ${d(sa.sum)} mm (${sa.n} días) · ${B.label} ${d(sb.sum)} mm (${sb.n} días) · ` +
+      `diferencia ${d(sb.sum - sa.sum)} mm.`
+    : `Media: ${A.label} ${d(sa.mean)} °C · ${B.label} ${d(sb.mean)} °C (Δ ${sb.mean - sa.mean >= 0 ? "+" : ""}${d(sb.mean - sa.mean)}). ` +
+      `Máx/mín: ${d(sa.mx)}/${d(sa.mn)} vs ${d(sb.mx)}/${d(sb.mn)} °C. ` +
+      `Días válidos: ${sa.n} vs ${sb.n}.`;
+}
+
+// ==========================================================
+// PRODUCTO: Nacional (todas las estaciones, medias anuales precomputadas)
+// ==========================================================
+
+async function loadNational() {
+  if (state.nationalTried) return;
+  state.nationalTried = true;
+  try {
+    const r = await fetch(`${DATA_URL}/national.json`);
+    if (r.ok) state.national = await r.json();
+  } catch { /* sin national.json */ }
+}
+
+async function runNacional() {
+  await loadNational();
+  const N = state.national;
+  if (!N) {
+    $("na-note").textContent =
+      "Falta data/national.json: genéralo con scripts/build_national.py y súbelo al repo.";
+    return;
+  }
+  const v = $("na-var").value;
+  const isPrec = v === "prec";
+  const minSt = +$("na-min").value;
+  const [refA, refB] = getRef();
+  const nRefYears = refB - refA + 1;
+  const years = [];
+  for (let y = N.y0; y <= N.y1; y++) years.push(y);
+  const iOf = (y) => y - N.y0;
+
+  const sums = new Array(years.length).fill(0);
+  const counts = new Array(years.length).fill(0);
+  let usable = 0;
+  for (const id in N.stations) {
+    const arr = N.stations[id][v];
+    if (!arr) continue;
+    // base propia de la estación en el período de referencia
+    let bSum = 0, bN = 0;
+    for (let y = Math.max(refA, N.y0); y <= Math.min(refB, N.y1); y++) {
+      const x = arr[iOf(y)];
+      if (x !== null) { bSum += x; bN++; }
+    }
+    if (bN < 0.8 * nRefYears) continue;
+    const base = bSum / bN;
+    if (isPrec && base <= 0) continue;
+    usable++;
+    for (let k = 0; k < years.length; k++) {
+      const x = arr[k];
+      if (x === null) continue;
+      sums[k] += isPrec ? (100 * x) / base : x - base;
+      counts[k]++;
+    }
+  }
+
+  const xs = [], ys = [], ns = [];
+  for (let k = 0; k < years.length; k++) {
+    if (counts[k] >= minSt) { xs.push(years[k]); ys.push(sums[k] / counts[k]); ns.push(counts[k]); }
+  }
+  if (xs.length < 5) {
+    $("na-note").textContent =
+      `Solo ${xs.length} años con ≥ ${minSt} estaciones válidas. Baja el mínimo o amplía la referencia.`;
+    Plotly.purge("plot-nacional"); return;
+  }
+
+  const amax = Math.max(...ys.map((y) => Math.abs(isPrec ? y - 100 : y)));
+  const layout = baseLayout(
+    `España (media de ${usable} estaciones con base propia) · ${VAR_LABELS[v]} ` +
+    (isPrec ? `· % de la normal ${refA}–${refB}` : `· anomalía vs ${refA}–${refB}`));
+  layout.yaxis.title = { text: isPrec ? "% de la normal" : "anomalía (°C)" };
+  layout.yaxis2 = { overlaying: "y", side: "right", title: { text: "estaciones" },
+                    gridcolor: "rgba(0,0,0,0)", rangemode: "tozero" };
+  layout.legend = { orientation: "h", y: -0.12 };
+  if (isPrec) layout.shapes = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 100, y1: 100,
+    line: { color: "#8b949e", dash: "dash", width: 1 } }];
+  const traces = [
+    { x: xs, y: ys, type: "bar", name: isPrec ? "% normal" : "anomalía",
+      marker: { color: ys.map((y) => isPrec ? y - 100 : y),
+                colorscale: isPrec ? "BrBG" : "RdBu",
+                reversescale: !isPrec,
+                cmin: isPrec ? -amax : -amax, cmax: amax, cmid: 0 },
+      hovertemplate: "%{x}: %{y:.1f}<extra></extra>" },
+    { x: xs, y: ns, yaxis: "y2", mode: "lines", name: "nº estaciones",
+      line: { color: "#8b949e", width: 1 }, hovertemplate: "%{x}: %{y} est.<extra></extra>" },
+  ];
+  let trendTxt = "";
+  if (!isPrec) {
+    const fit = ols(xs, ys);
+    if (fit) {
+      traces.push({ x: [xs[0], xs[xs.length - 1]],
+        y: [fit.a + fit.b * xs[0], fit.a + fit.b * xs[xs.length - 1]],
+        mode: "lines", line: { color: "#e6edf3", width: 1.5, dash: "dot" },
+        hoverinfo: "skip", showlegend: false });
+      trendTxt = ` Tendencia: ${(fit.b * 10 >= 0 ? "+" : "")}${(fit.b * 10).toFixed(2)} °C/década (OLS, orientativa).`;
+    }
+  }
+  Plotly.newPlot("plot-nacional", traces, layout, PLOTLY_CFG);
+
+  $("na-note").textContent =
+    `Anomalía de cada estación respecto a su propia base ${refA}–${refB} (exige ≥80% de esos años), ` +
+    `promediada sobre las disponibles cada año.${trendTxt} ` +
+    `Red no homogeneizada: los primeros años, con pocas estaciones, son menos representativos. ` +
+    `Llega hasta el último año consolidado del build (la ventana diaria reciente no entra aquí).`;
+}
+
 // ==========================================================
 // PRODUCTO: Dos estaciones
 // ==========================================================
@@ -1343,7 +1565,7 @@ async function exportActivePanel() {
 Object.assign(TAB_RUNNERS, {
   anio: runAnio, evolucion: runEvolution, stripes: runStripes,
   indices: runIndices, rachas: runStreaks, comparador: runComparator,
-  olas: runWaves, records: runRecords,
+  olas: runWaves, records: runRecords, periodos: runPeriodos, nacional: runNacional,
   distribucion: runDistribution, calendario: runCalendar, duelo: runDuel,
 });
 
@@ -1351,7 +1573,8 @@ function bindControls() {
   const runs = { "an-run": runAnio, "ev-run": runEvolution, "st-run": runStripes,
                  "ix-run": runIndices, "ra-run": runStreaks, "co-run": runComparator,
                  "di-run": runDistribution, "ca-run": runCalendar, "du-run": runDuel,
-                 "ol-run": runWaves, "re-run": runRecords };
+                 "ol-run": runWaves, "re-run": runRecords,
+                 "pe-run": runPeriodos, "na-run": runNacional };
   for (const [id, fn] of Object.entries(runs)) $(id).addEventListener("click", fn);
 
   for (const [slider, out] of [["ev-cov", "ev-cov-val"], ["co-cov", "co-cov-val"],
@@ -1359,6 +1582,9 @@ function bindControls() {
     $(slider).addEventListener("input", () => { $(out).textContent = `${$(slider).value}%`; });
   }
   $("re-skip").addEventListener("input", () => { $("re-skip-val").textContent = $("re-skip").value; });
+  $("na-min").addEventListener("input", () => { $("na-min-val").textContent = $("na-min").value; });
+  $("pe-tipo").addEventListener("change", populatePeriodSubs);
+  populatePeriodSubs();
   $("ra-var").addEventListener("change", () => {
     $("ra-unit").textContent = VAR_UNITS[$("ra-var").value];
   });
@@ -1388,6 +1614,7 @@ async function init() {
     document.querySelector(".tagline").textContent =
       `Series diarias · ${state.index.n_stations} estaciones · análisis en tu navegador`;
     makeSearch($("station-search"), $("search-results"), selectStation);
+    $("tabs").hidden = false;
     makeSearch($("du-search"), $("du-results"), async (id) => {
       state.stationB = await loadStation(id);
       runDuel();
