@@ -1412,7 +1412,7 @@ async function runNacional() {
     { x: xs, y: ys, type: "bar", name: isPrec ? "% normal" : "anomalía",
       marker: { color: ys.map((y) => isPrec ? y - 100 : y),
                 colorscale: isPrec ? "BrBG" : "RdBu",
-                reversescale: !isPrec,
+                reversescale: false,
                 cmin: isPrec ? -amax : -amax, cmax: amax, cmid: 0 },
       hovertemplate: "%{x}: %{y:.1f}<extra></extra>" },
     { x: xs, y: ns, yaxis: "y2", mode: "lines", name: "nº estaciones",
