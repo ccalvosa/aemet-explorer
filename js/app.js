@@ -365,9 +365,9 @@ function renderEphemeris() {
   const rPrec = recordOf("prec", (a, b) => a > b);
 
   let html = `<h4>Efemérides · ${mdLabel(todayMd)}</h4>`;
-  if (rTmax) html += `<div class="eph-row"><span class="eph-tmax">Tmax más alta</span><span class="mono">${rTmax.v.toFixed(1)} °C · ${rTmax.yr}</span></div>`;
-  if (rTmin) html += `<div class="eph-row"><span class="eph-tmin">Tmin más baja</span><span class="mono">${rTmin.v.toFixed(1)} °C · ${rTmin.yr}</span></div>`;
-  if (rPrec && rPrec.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec. máxima</span><span class="mono">${rPrec.v.toFixed(1)} mm · ${rPrec.yr}</span></div>`;
+  if (rTmax) html += `<div class="eph-row"><span class="eph-tmax">Tmax ↑</span><span class="mono">${rTmax.v.toFixed(1)} °C · ${rTmax.yr}</span></div>`;
+  if (rTmin) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↓</span><span class="mono">${rTmin.v.toFixed(1)} °C · ${rTmin.yr}</span></div>`;
+  if (rPrec && rPrec.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec</span><span class="mono">${rPrec.v.toFixed(1)} mm · ${rPrec.yr}</span></div>`;
 
   // último dato de tmax en percentil de la referencia (md ±3)
   const tmax = S.json.data.tmax;
@@ -425,15 +425,15 @@ function renderEphemeris() {
     cur.pM = upd(cur.pM, D.prec[i], true);
   }
   html += `<h4 style="margin-top:0.9rem">Récords de ${MESES[cm]}</h4>`;
-  if (cur.txM) html += `<div class="eph-row"><span class="eph-tmax">Tmax más alta</span><span class="mono">${cur.txM.v.toFixed(1)} °C · ${fd(cur.txM)}</span></div>`;
-  if (cur.txm) html += `<div class="eph-row"><span class="eph-tmax">Tmax más baja</span><span class="mono">${cur.txm.v.toFixed(1)} °C · ${fd(cur.txm)}</span></div>`;
-  if (cur.tnM) html += `<div class="eph-row"><span class="eph-tmin">Tmin más alta</span><span class="mono">${cur.tnM.v.toFixed(1)} °C · ${fd(cur.tnM)}</span></div>`;
-  if (cur.tnm) html += `<div class="eph-row"><span class="eph-tmin">Tmin más baja</span><span class="mono">${cur.tnm.v.toFixed(1)} °C · ${fd(cur.tnm)}</span></div>`;
-  if (cur.pM && cur.pM.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec 24 h máx.</span><span class="mono">${cur.pM.v.toFixed(1)} mm · ${fd(cur.pM)}</span></div>`;
+  if (cur.txM) html += `<div class="eph-row"><span class="eph-tmax">Tmax ↑</span><span class="mono">${cur.txM.v.toFixed(1)} °C · ${fd(cur.txM)}</span></div>`;
+  if (cur.txm) html += `<div class="eph-row"><span class="eph-tmax">Tmax ↓</span><span class="mono">${cur.txm.v.toFixed(1)} °C · ${fd(cur.txm)}</span></div>`;
+  if (cur.tnM) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↑</span><span class="mono">${cur.tnM.v.toFixed(1)} °C · ${fd(cur.tnM)}</span></div>`;
+  if (cur.tnm) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↓</span><span class="mono">${cur.tnm.v.toFixed(1)} °C · ${fd(cur.tnm)}</span></div>`;
+  if (cur.pM && cur.pM.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec</span><span class="mono">${cur.pM.v.toFixed(1)} mm · ${fd(cur.pM)}</span></div>`;
   html += `<h4 style="margin-top:0.9rem">Récords absolutos de la estación</h4>`;
-  if (abs.tmax) html += `<div class="eph-row"><span class="eph-tmax">Tmax</span><span class="mono">${abs.tmax.v.toFixed(1)} °C · ${fd(abs.tmax)}</span></div>`;
-  if (abs.tmin) html += `<div class="eph-row"><span class="eph-tmin">Tmin</span><span class="mono">${abs.tmin.v.toFixed(1)} °C · ${fd(abs.tmin)}</span></div>`;
-  if (abs.prec && abs.prec.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec 24 h</span><span class="mono">${abs.prec.v.toFixed(1)} mm · ${fd(abs.prec)}</span></div>`;
+  if (abs.tmax) html += `<div class="eph-row"><span class="eph-tmax">Tmax ↑</span><span class="mono">${abs.tmax.v.toFixed(1)} °C · ${fd(abs.tmax)}</span></div>`;
+  if (abs.tmin) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↓</span><span class="mono">${abs.tmin.v.toFixed(1)} °C · ${fd(abs.tmin)}</span></div>`;
+  if (abs.prec && abs.prec.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec</span><span class="mono">${abs.prec.v.toFixed(1)} mm · ${fd(abs.prec)}</span></div>`;
 
   box.innerHTML = html;
 }
