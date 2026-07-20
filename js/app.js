@@ -407,11 +407,6 @@ function renderEphemeris() {
   const fd = (r) => fmtDate(S.startMs, r.i);
   const fy = (r) => S.years[r.i];
 
-  html += `<details class="rec-details"><summary>Récords absolutos de la estación</summary>`;
-  if (abs.tmax) html += `<div class="eph-row"><span class="eph-tmax">Tmax</span><span class="mono">${abs.tmax.v.toFixed(1)} °C · ${fd(abs.tmax)}</span></div>`;
-  if (abs.tmin) html += `<div class="eph-row"><span class="eph-tmin">Tmin</span><span class="mono">${abs.tmin.v.toFixed(1)} °C · ${fd(abs.tmin)}</span></div>`;
-  if (abs.prec && abs.prec.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec 24 h</span><span class="mono">${abs.prec.v.toFixed(1)} mm · ${fd(abs.prec)}</span></div>`;
-  html += `</details>`;
 
   // récords del mes en curso: extremos de tmax y tmin, y prec máxima
   const cm = now.getMonth() + 1;
@@ -435,6 +430,10 @@ function renderEphemeris() {
   if (cur.tnM) html += `<div class="eph-row"><span class="eph-tmin">Tmin más alta</span><span class="mono">${cur.tnM.v.toFixed(1)} °C · ${fd(cur.tnM)}</span></div>`;
   if (cur.tnm) html += `<div class="eph-row"><span class="eph-tmin">Tmin más baja</span><span class="mono">${cur.tnm.v.toFixed(1)} °C · ${fd(cur.tnm)}</span></div>`;
   if (cur.pM && cur.pM.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec 24 h máx.</span><span class="mono">${cur.pM.v.toFixed(1)} mm · ${fd(cur.pM)}</span></div>`;
+  html += `<h4 style="margin-top:0.9rem">Récords absolutos de la estación</h4>`;
+  if (abs.tmax) html += `<div class="eph-row"><span class="eph-tmax">Tmax</span><span class="mono">${abs.tmax.v.toFixed(1)} °C · ${fd(abs.tmax)}</span></div>`;
+  if (abs.tmin) html += `<div class="eph-row"><span class="eph-tmin">Tmin</span><span class="mono">${abs.tmin.v.toFixed(1)} °C · ${fd(abs.tmin)}</span></div>`;
+  if (abs.prec && abs.prec.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec 24 h</span><span class="mono">${abs.prec.v.toFixed(1)} mm · ${fd(abs.prec)}</span></div>`;
 
   box.innerHTML = html;
 }
