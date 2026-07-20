@@ -385,6 +385,43 @@ function renderEphemeris() {
     }
   }
   if (!rTmax && !rTmin) html += `<p class="eph-note">Sin datos para esta fecha.</p>`;
+
+  // ---- récords absolutos y por mes (un solo pase por la serie) ----
+  const abs = { tmax: null, tmin: null, prec: null };
+  const mon = Array.from({ length: 13 }, () => ({ tmax: null, tmin: null, prec: null }));
+  const D = S.json.data;
+  for (let i = 0; i < D.tmax.length; i++) {
+    const mo = Math.floor(S.md[i] / 100);
+    const upd = (slot, val, hi) => {
+      if (val === null) return slot;
+      if (!slot || (hi ? val > slot.v : val < slot.v)) return { v: val, i };
+      return slot;
+    };
+    abs.tmax = upd(abs.tmax, D.tmax[i], true);
+    abs.tmin = upd(abs.tmin, D.tmin[i], false);
+    abs.prec = upd(abs.prec, D.prec[i], true);
+    mon[mo].tmax = upd(mon[mo].tmax, D.tmax[i], true);
+    mon[mo].tmin = upd(mon[mo].tmin, D.tmin[i], false);
+    mon[mo].prec = upd(mon[mo].prec, D.prec[i], true);
+  }
+  const fd = (r) => fmtDate(S.startMs, r.i);
+  const fy = (r) => S.years[r.i];
+
+  html += `<details class="rec-details"><summary>Récords absolutos de la estación</summary>`;
+  if (abs.tmax) html += `<div class="eph-row"><span class="eph-tmax">Tmax</span><span class="mono">${abs.tmax.v.toFixed(1)} °C · ${fd(abs.tmax)}</span></div>`;
+  if (abs.tmin) html += `<div class="eph-row"><span class="eph-tmin">Tmin</span><span class="mono">${abs.tmin.v.toFixed(1)} °C · ${fd(abs.tmin)}</span></div>`;
+  if (abs.prec && abs.prec.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec 24 h</span><span class="mono">${abs.prec.v.toFixed(1)} mm · ${fd(abs.prec)}</span></div>`;
+  html += `</details>`;
+
+  html += `<details class="rec-details"><summary>Récords por mes</summary>
+    <table class="rec-table"><thead><tr><th></th><th class="eph-tmax">Tmax</th><th class="eph-tmin">Tmin</th><th class="eph-prec">Prec</th></tr></thead><tbody>`;
+  for (let mo = 1; mo <= 12; mo++) {
+    const m = mon[mo];
+    const c = (r, dec) => r ? `${r.v.toFixed(dec)}<span class="rec-yr">·${fy(r)}</span>` : "—";
+    html += `<tr><td>${MESES[mo]}</td><td>${c(m.tmax, 1)}</td><td>${c(m.tmin, 1)}</td><td>${c(m.prec, 0)}</td></tr>`;
+  }
+  html += `</tbody></table><p class="eph-note">°C / °C / mm en 24 h · año del récord</p></details>`;
+
   box.innerHTML = html;
 }
 

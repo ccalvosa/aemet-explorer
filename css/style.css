@@ -478,3 +478,22 @@ input[type="range"] { width: 150px; accent-color: var(--tmax); }
   padding: 0.3rem 0.8rem;
   font-size: 0.8rem;
 }
+
+/* récords en la placa */
+.rec-details { margin-top: 0.7rem; border-top: 1px solid var(--border); padding-top: 0.6rem; }
+.rec-details summary {
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  list-style-position: outside;
+}
+.rec-details summary:hover { color: var(--fg); }
+.rec-details[open] summary { margin-bottom: 0.45rem; }
+.rec-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.72rem; }
+.rec-table th { text-align: right; font-weight: 600; padding: 0.15rem 0.2rem; }
+.rec-table th:first-child, .rec-table td:first-child { text-align: left; color: var(--muted); }
+.rec-table td { text-align: right; padding: 0.15rem 0.2rem; border-top: 1px solid var(--border); }
+.rec-yr { color: var(--muted); font-size: 0.62rem; }
