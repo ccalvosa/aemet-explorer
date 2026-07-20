@@ -558,20 +558,25 @@ function runAnio() {
     }
     if (![...clim.sorted.values()].length) note = "Sin datos en el período de referencia. ";
     // récords diarios absolutos de toda la serie (mes-día exacto)
+    // récords diarios SOLO de los años anteriores al seleccionado
     const rMax = new Array(365).fill(null), rMin = new Array(365).fill(null);
-    for (const [, row] of M) {
+    let nPrev = 0;
+    for (const [gy, row] of M) {
+      if (gy >= year) continue;
+      nPrev++;
       for (let p = 0; p < 365; p++) {
         if (row[p] === null) continue;
         if (rMax[p] === null || row[p] > rMax[p]) rMax[p] = row[p];
         if (rMin[p] === null || row[p] < rMin[p]) rMin[p] = row[p];
       }
     }
+    if (nPrev < 10) note += `Solo ${nPrev} años anteriores a ${year}: récords previos poco significativos. `;
     const sel = M.has(year) ? M.get(year) : null;
     traces = [
-      { x, y: rMax, mode: "lines", name: "récord diario alto",
+      { x, y: rMax, mode: "lines", name: `récord previo alto (pre-${year})`,
         line: { color: VAR_COLORS.tmax, width: 1, dash: "dot" }, opacity: 0.55,
         hovertemplate: ht + "<extra>récord alto</extra>" },
-      { x, y: rMin, mode: "lines", name: "récord diario bajo",
+      { x, y: rMin, mode: "lines", name: `récord previo bajo (pre-${year})`,
         line: { color: VAR_COLORS.tmin, width: 1, dash: "dot" }, opacity: 0.55,
         hovertemplate: ht + "<extra>récord bajo</extra>" },
       { x, y: p95, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
