@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Explorador climático AEMET</title>
 <meta name="description" content="Análisis interactivo de series diarias de estaciones de AEMET: evolución, rachas, stripes, índices climáticos, comparadores y más.">
-<link rel="stylesheet" href="css/style.css?v=18">
+<link rel="stylesheet" href="css/style.css?v=19">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -150,6 +150,8 @@
         <button id="ev-run" class="btn">Calcular</button>
       </div>
       <div id="plot-evolucion" class="plot"></div>
+      <h3 class="block-title">Anomalía respecto al período de referencia</h3>
+      <div id="plot-evolucion-anom" class="plot plot-half"></div>
       <p id="ev-note" class="note"></p>
     </section>
 
@@ -492,6 +494,6 @@
   </main>
 </div>
 
-<script src="js/app.js?v=18"></script>
+<script src="js/app.js?v=19"></script>
 </body>
 </html>

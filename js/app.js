@@ -641,8 +641,48 @@ function runEvolution() {
   layout.yaxis.title = { text: "°C" };
   layout.legend = { orientation: "h", y: -0.12 };
   Plotly.newPlot("plot-evolucion", traces, layout, PLOTLY_CFG);
-  $("ev-note").textContent = excluded
-    ? `${excluded} año-variable excluidos por cobertura < ${Math.round(minCov * 100)}%.` : "";
+
+  // ---- anomalías vs referencia global ----
+  const [refA, refB] = getRef();
+  const anomTraces = [];
+  const refNote = [];
+  let shortRef = false;
+  for (const v of vars) {
+    const groups = aggregateWindow(S.json.data[v], mdS, mdE);
+    const valid = new Map();
+    for (const [yr, g] of groups) {
+      if (g.nTotal && g.n / g.nTotal >= minCov) valid.set(yr, g.sum / g.n);
+    }
+    const refVals = [...valid].filter(([y]) => y >= refA && y <= refB).map(([, m]) => m);
+    if (refVals.length < 10) { shortRef = true; continue; }
+    const base = mean(refVals);
+    refNote.push(`${VAR_LABELS[v]} ${base.toFixed(2)} °C`);
+    const yrs = [...valid.keys()].sort((a, b) => a - b);
+    const an = yrs.map((y) => valid.get(y) - base);
+    if (vars.length === 1) {
+      const amax = Math.max(...an.map(Math.abs));
+      anomTraces.push({ x: yrs, y: an, type: "bar",
+        marker: { color: an, colorscale: "RdBu", reversescale: false, cmin: -amax, cmax: amax },
+        hovertemplate: "%{x}: %{y:+.2f} °C<extra></extra>", name: VAR_LABELS[v] });
+    } else {
+      anomTraces.push({ x: yrs, y: an, mode: "lines+markers", name: VAR_LABELS[v],
+        line: { color: VAR_COLORS[v], width: 1.2 }, marker: { size: 4 },
+        hovertemplate: "%{x}: %{y:+.2f} °C<extra>" + VAR_LABELS[v] + "</extra>" });
+    }
+  }
+  const l2 = baseLayout("");
+  l2.margin.t = 10;
+  l2.yaxis.title = { text: `anomalía (°C) vs ${refA}–${refB}` };
+  l2.legend = { orientation: "h", y: -0.18 };
+  l2.showlegend = vars.length > 1;
+  l2.shapes = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 0, y1: 0,
+    line: { color: "#8b949e", width: 1 } }];
+  Plotly.newPlot("plot-evolucion-anom", anomTraces, l2, PLOTLY_CFG);
+
+  $("ev-note").textContent =
+    (excluded ? `${excluded} año-variable excluidos por cobertura < ${Math.round(minCov * 100)}%. ` : "") +
+    (refNote.length ? `Media de referencia ${refA}–${refB}: ${refNote.join(" · ")}. ` : "") +
+    (shortRef ? "Alguna variable no tiene años suficientes en la referencia para calcular anomalías." : "");
 }
 
 // ==========================================================
