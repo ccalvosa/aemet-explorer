@@ -413,14 +413,28 @@ function renderEphemeris() {
   if (abs.prec && abs.prec.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec 24 h</span><span class="mono">${abs.prec.v.toFixed(1)} mm · ${fd(abs.prec)}</span></div>`;
   html += `</details>`;
 
-  html += `<details class="rec-details"><summary>Récords por mes</summary>
-    <table class="rec-table"><thead><tr><th></th><th class="eph-tmax">Tmax</th><th class="eph-tmin">Tmin</th><th class="eph-prec">Prec</th></tr></thead><tbody>`;
-  for (let mo = 1; mo <= 12; mo++) {
-    const m = mon[mo];
-    const c = (r, dec) => r ? `${r.v.toFixed(dec)}<span class="rec-yr">·${fy(r)}</span>` : "—";
-    html += `<tr><td>${MESES[mo]}</td><td>${c(m.tmax, 1)}</td><td>${c(m.tmin, 1)}</td><td>${c(m.prec, 0)}</td></tr>`;
+  // récords del mes en curso: extremos de tmax y tmin, y prec máxima
+  const cm = now.getMonth() + 1;
+  const cur = { txM: null, txm: null, tnM: null, tnm: null, pM: null };
+  for (let i = 0; i < D.tmax.length; i++) {
+    if (Math.floor(S.md[i] / 100) !== cm) continue;
+    const upd = (slot, val, hi) => {
+      if (val === null) return slot;
+      if (!slot || (hi ? val > slot.v : val < slot.v)) return { v: val, i };
+      return slot;
+    };
+    cur.txM = upd(cur.txM, D.tmax[i], true);
+    cur.txm = upd(cur.txm, D.tmax[i], false);
+    cur.tnM = upd(cur.tnM, D.tmin[i], true);
+    cur.tnm = upd(cur.tnm, D.tmin[i], false);
+    cur.pM = upd(cur.pM, D.prec[i], true);
   }
-  html += `</tbody></table><p class="eph-note">°C / °C / mm en 24 h · año del récord</p></details>`;
+  html += `<h4 style="margin-top:0.9rem">Récords de ${MESES[cm]}</h4>`;
+  if (cur.txM) html += `<div class="eph-row"><span class="eph-tmax">Tmax más alta</span><span class="mono">${cur.txM.v.toFixed(1)} °C · ${fd(cur.txM)}</span></div>`;
+  if (cur.txm) html += `<div class="eph-row"><span class="eph-tmax">Tmax más baja</span><span class="mono">${cur.txm.v.toFixed(1)} °C · ${fd(cur.txm)}</span></div>`;
+  if (cur.tnM) html += `<div class="eph-row"><span class="eph-tmin">Tmin más alta</span><span class="mono">${cur.tnM.v.toFixed(1)} °C · ${fd(cur.tnM)}</span></div>`;
+  if (cur.tnm) html += `<div class="eph-row"><span class="eph-tmin">Tmin más baja</span><span class="mono">${cur.tnm.v.toFixed(1)} °C · ${fd(cur.tnm)}</span></div>`;
+  if (cur.pM && cur.pM.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec 24 h máx.</span><span class="mono">${cur.pM.v.toFixed(1)} mm · ${fd(cur.pM)}</span></div>`;
 
   box.innerHTML = html;
 }
