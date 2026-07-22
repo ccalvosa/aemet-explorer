@@ -507,7 +507,7 @@ input[type="range"] { width: 150px; accent-color: var(--tmax); }
   gap: 0.6rem;
 }
 .ref-box-top .field-label { margin-bottom: 0; }
-.ref-box-top .yr-input { width: 4.2rem; }
+.ref-box-top .yr-input { width: 5.5rem; text-align: center; }
 @media (max-width: 640px) {
   .ref-box-top { margin-left: 0; width: 100%; }
 }
