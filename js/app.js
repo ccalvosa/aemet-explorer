@@ -387,7 +387,9 @@ function renderEphemeris() {
   if (!rTmax && !rTmin) html += `<p class="eph-note">Sin datos para esta fecha.</p>`;
 
   // ---- récords absolutos y por mes (un solo pase por la serie) ----
-  const abs = { tmax: null, tmin: null, prec: null };
+  const abs = { tmax: null, txm: null, tnM: null, tmin: null, prec: null };
+  const yearTot = new Map(), monthTot = new Map();
+  const nowMonth = now.getMonth() + 1;
   const mon = Array.from({ length: 13 }, () => ({ tmax: null, tmin: null, prec: null }));
   const D = S.json.data;
   for (let i = 0; i < D.tmax.length; i++) {
@@ -398,12 +400,35 @@ function renderEphemeris() {
       return slot;
     };
     abs.tmax = upd(abs.tmax, D.tmax[i], true);
+    abs.txm = upd(abs.txm, D.tmax[i], false);
+    abs.tnM = upd(abs.tnM, D.tmin[i], true);
     abs.tmin = upd(abs.tmin, D.tmin[i], false);
     abs.prec = upd(abs.prec, D.prec[i], true);
     mon[mo].tmax = upd(mon[mo].tmax, D.tmax[i], true);
     mon[mo].tmin = upd(mon[mo].tmin, D.tmin[i], false);
     mon[mo].prec = upd(mon[mo].prec, D.prec[i], true);
+    if (D.prec[i] !== null) {
+      const yy = S.years[i];
+      const ty = yearTot.get(yy) || { sum: 0, n: 0 };
+      ty.sum += D.prec[i]; ty.n++; yearTot.set(yy, ty);
+      if (mo === nowMonth) {
+        const tm = monthTot.get(yy) || { sum: 0, n: 0 };
+        tm.sum += D.prec[i]; tm.n++; monthTot.set(yy, tm);
+      }
+    }
   }
+  const DIM = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const leap = (y) => (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 1 : 0;
+  function minTotal(map, needDays) {
+    let best = null;
+    for (const [y, t] of map) {
+      if (t.n < 0.9 * needDays(y)) continue;   // meses/años incompletos fuera
+      if (!best || t.sum < best.sum) best = { yr: y, sum: t.sum };
+    }
+    return best;
+  }
+  const dryMonth = minTotal(monthTot, (y) => DIM[nowMonth] + (nowMonth === 2 ? leap(y) : 0));
+  const dryYear = minTotal(yearTot, (y) => 365 + leap(y));
   const fd = (r) => fmtDate(S.startMs, r.i);
   const fy = (r) => S.years[r.i];
 
@@ -429,11 +454,15 @@ function renderEphemeris() {
   if (cur.txm) html += `<div class="eph-row"><span class="eph-tmax">Tmax ↓</span><span class="mono">${cur.txm.v.toFixed(1)} °C · ${fd(cur.txm)}</span></div>`;
   if (cur.tnM) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↑</span><span class="mono">${cur.tnM.v.toFixed(1)} °C · ${fd(cur.tnM)}</span></div>`;
   if (cur.tnm) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↓</span><span class="mono">${cur.tnm.v.toFixed(1)} °C · ${fd(cur.tnm)}</span></div>`;
-  if (cur.pM && cur.pM.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec</span><span class="mono">${cur.pM.v.toFixed(1)} mm · ${fd(cur.pM)}</span></div>`;
+  if (cur.pM && cur.pM.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec 24 h ↑</span><span class="mono">${cur.pM.v.toFixed(1)} mm · ${fd(cur.pM)}</span></div>`;
+  if (dryMonth) html += `<div class="eph-row"><span class="eph-prec">Prec mes ↓</span><span class="mono">${dryMonth.sum.toFixed(1)} mm · ${dryMonth.yr}</span></div>`;
   html += `<h4 style="margin-top:0.9rem">Récords absolutos de la estación</h4>`;
   if (abs.tmax) html += `<div class="eph-row"><span class="eph-tmax">Tmax ↑</span><span class="mono">${abs.tmax.v.toFixed(1)} °C · ${fd(abs.tmax)}</span></div>`;
+  if (abs.txm) html += `<div class="eph-row"><span class="eph-tmax">Tmax ↓</span><span class="mono">${abs.txm.v.toFixed(1)} °C · ${fd(abs.txm)}</span></div>`;
+  if (abs.tnM) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↑</span><span class="mono">${abs.tnM.v.toFixed(1)} °C · ${fd(abs.tnM)}</span></div>`;
   if (abs.tmin) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↓</span><span class="mono">${abs.tmin.v.toFixed(1)} °C · ${fd(abs.tmin)}</span></div>`;
-  if (abs.prec && abs.prec.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec</span><span class="mono">${abs.prec.v.toFixed(1)} mm · ${fd(abs.prec)}</span></div>`;
+  if (abs.prec && abs.prec.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec 24 h ↑</span><span class="mono">${abs.prec.v.toFixed(1)} mm · ${fd(abs.prec)}</span></div>`;
+  if (dryYear) html += `<div class="eph-row"><span class="eph-prec">Prec año ↓</span><span class="mono">${dryYear.sum.toFixed(1)} mm · ${dryYear.yr}</span></div>`;
 
   box.innerHTML = html;
 }
@@ -502,8 +531,10 @@ function runAnio() {
     // ---- precipitación: trayectorias acumuladas ----
     function cumTraj(row) {
       const out = new Array(365).fill(null);
+      let lastValid = -1;
+      for (let p = 364; p >= 0; p--) if (row[p] !== null) { lastValid = p; break; }
       let sum = 0, n = 0;
-      for (let p = 0; p < 365; p++) {
+      for (let p = 0; p <= lastValid; p++) {
         if (row[p] !== null) { sum += row[p]; n++; }
         if (!n || n < 0.8 * (p + 1)) continue;
         out[p] = sum;
