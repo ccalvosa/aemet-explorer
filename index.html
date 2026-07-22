@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Explorador climático AEMET</title>
 <meta name="description" content="Análisis interactivo de series diarias de estaciones de AEMET: evolución, rachas, stripes, índices climáticos, comparadores y más.">
-<link rel="stylesheet" href="css/style.css?v=24">
+<link rel="stylesheet" href="css/style.css?v=25">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -16,6 +16,14 @@
     <h1>Explorador climático <span class="brand-accent">AEMET</span></h1>
   </div>
   <p class="tagline">Series diarias · análisis en tu navegador</p>
+  <div class="ref-box-top">
+    <span class="field-label">Referencia</span>
+    <div class="inline">
+      <input type="number" id="ref-start" class="mono yr-input" value="1991" min="1900" max="2100">
+      <span class="sep">–</span>
+      <input type="number" id="ref-end" class="mono yr-input" value="2020" min="1900" max="2100">
+    </div>
+  </div>
 </header>
 
 <div class="layout">
@@ -29,15 +37,6 @@
       <ul id="search-results" class="search-results" hidden></ul>
     </section>
 
-    <section class="ref-box">
-      <span class="field-label">Período de referencia</span>
-      <div class="inline">
-        <input type="number" id="ref-start" class="mono yr-input" value="1991" min="1900" max="2100">
-        <span class="sep">–</span>
-        <input type="number" id="ref-end" class="mono yr-input" value="2020" min="1900" max="2100">
-      </div>
-      <p class="hint">Base de anomalías, percentiles y efemérides. Estándar OMM: 1991–2020.</p>
-    </section>
 
     <section id="station-plate" class="station-plate" hidden>
       <div class="plate-head">
@@ -494,6 +493,6 @@
   </main>
 </div>
 
-<script src="js/app.js?v=24"></script>
+<script src="js/app.js?v=25"></script>
 </body>
 </html>

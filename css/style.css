@@ -497,3 +497,17 @@ input[type="range"] { width: 150px; accent-color: var(--tmax); }
 .rec-table th:first-child, .rec-table td:first-child { text-align: left; color: var(--muted); }
 .rec-table td { text-align: right; padding: 0.15rem 0.2rem; border-top: 1px solid var(--border); }
 .rec-yr { color: var(--muted); font-size: 0.62rem; }
+
+/* período de referencia en la topbar */
+.topbar { justify-content: flex-start; }
+.ref-box-top {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.ref-box-top .field-label { margin-bottom: 0; }
+.ref-box-top .yr-input { width: 4.2rem; }
+@media (max-width: 640px) {
+  .ref-box-top { margin-left: 0; width: 100%; }
+}
