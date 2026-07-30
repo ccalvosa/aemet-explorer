@@ -734,6 +734,7 @@ function runEvolution() {
 function runStripes() {
   const S = state.station;
   const v = $("st-var").value;
+  const isPrec = v === "prec";
   const mdS = parseMd($("st-md-start").value);
   const mdE = parseMd($("st-md-end").value);
   if (mdS === null || mdE === null) { $("st-note").textContent = "Ventana no válida."; return; }
@@ -741,50 +742,108 @@ function runStripes() {
   const [refA, refB] = getRef();
 
   const groups = aggregateWindow(S.json.data[v], mdS, mdE);
-  const means = new Map();
+  const vals = new Map();
   for (const [yr, g] of groups) {
-    if (g.nTotal && g.n / g.nTotal >= minCov) means.set(yr, g.sum / g.n);
+    if (g.nTotal && g.n / g.nTotal >= minCov) vals.set(yr, isPrec ? g.sum : g.sum / g.n);
   }
-  const refVals = [...means].filter(([y]) => y >= refA && y <= refB).map(([, m]) => m);
+  const refVals = [...vals].filter(([y]) => y >= refA && y <= refB).map(([, m]) => m);
   if (refVals.length < 10) {
     $("st-note").textContent =
       `Solo ${refVals.length} años válidos en ${refA}–${refB}: la referencia no es fiable.`;
     return;
   }
   const refMean = mean(refVals);
+  if (isPrec && refMean <= 0) {
+    $("st-note").textContent = "Precipitación de referencia nula: no se puede normalizar.";
+    return;
+  }
 
-  const yrs = [...means.keys()].sort((a, b) => a - b);
+  const yrs = [...vals.keys()].sort((a, b) => a - b);
   const y0 = yrs[0], y1 = yrs[yrs.length - 1];
+  const center = isPrec ? 100 : 0;
+  const cscale = isPrec ? "BrBG" : "RdBu";
   const allYears = [], anoms = [];
   for (let y = y0; y <= y1; y++) {
     allYears.push(y);
-    anoms.push(means.has(y) ? means.get(y) - refMean : null);
+    anoms.push(vals.has(y)
+      ? (isPrec ? (100 * vals.get(y)) / refMean : vals.get(y) - refMean)
+      : null);
   }
-  const amax = Math.max(...anoms.filter((a) => a !== null).map(Math.abs));
+  const amax = Math.max(...anoms.filter((a) => a !== null).map((a) => Math.abs(a - center))) || 1;
 
-  const l1 = baseLayout(`${S.json.name} · ${VAR_LABELS[v]} ${mdLabel(mdS)} → ${mdLabel(mdE)} · anomalía vs ${refA}–${refB}`);
+  // ---- banda de stripes ----
+  const l1 = baseLayout(`${S.json.name} · ${VAR_LABELS[v]} ${mdLabel(mdS)} → ${mdLabel(mdE)} · ` +
+    (isPrec ? `% de la normal ${refA}–${refB}` : `anomalía vs ${refA}–${refB}`));
   l1.margin = { l: 30, r: 20, t: 40, b: 30 };
   l1.yaxis = { visible: false };
   Plotly.newPlot("plot-stripes", [{
     x: allYears, y: [""], z: [anoms], type: "heatmap",
-    colorscale: "RdBu", reversescale: false,
-    zmin: -amax, zmax: amax, showscale: false,
-    hovertemplate: "%{x}: %{z:+.2f} °C<extra></extra>",
+    colorscale: cscale, reversescale: false, zmid: center,
+    zmin: center - amax, zmax: center + amax, showscale: false,
+    hovertemplate: isPrec ? "%{x}: %{z:.0f}% de la normal<extra></extra>"
+                          : "%{x}: %{z:+.2f} °C<extra></extra>",
   }], l1, PLOTLY_CFG);
 
+  // ---- barras de anomalía + tendencia + media móvil ----
   const l2 = baseLayout("");
   l2.margin.t = 10;
-  l2.yaxis.title = { text: "anomalía (°C)" };
-  Plotly.newPlot("plot-stripes-anom", [{
-    x: allYears, y: anoms, type: "bar",
-    marker: { color: anoms, colorscale: "RdBu", reversescale: false, cmin: -amax, cmax: amax },
-    hovertemplate: "%{x}: %{y:+.2f} °C<extra></extra>",
-  }], l2, PLOTLY_CFG);
+  l2.yaxis.title = { text: isPrec ? "% de la normal" : "anomalía (°C)" };
+  l2.legend = { orientation: "h", y: -0.18 };
+  if (isPrec) l2.shapes = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 100, y1: 100,
+    line: { color: "#8b949e", dash: "dash", width: 1 } }];
+  const anomTraces = [{
+    x: allYears, y: anoms, type: "bar", name: "anomalía", showlegend: false,
+    marker: { color: anoms, colorscale: cscale, reversescale: false,
+              cmid: center, cmin: center - amax, cmax: center + amax },
+    hovertemplate: isPrec ? "%{x}: %{y:.0f}%<extra></extra>" : "%{x}: %{y:+.2f} °C<extra></extra>",
+  }];
+
+  const vx = [], vy = [];
+  for (let k = 0; k < allYears.length; k++) if (anoms[k] !== null) { vx.push(allYears[k]); vy.push(anoms[k]); }
+
+  let trendTxt = "";
+  if ($("st-trend").checked) {
+    const fit = ols(vx, vy);
+    if (fit) {
+      anomTraces.push({
+        x: [vx[0], vx[vx.length - 1]],
+        y: [fit.a + fit.b * vx[0], fit.a + fit.b * vx[vx.length - 1]],
+        mode: "lines", name: "tendencia",
+        line: { color: "#e6edf3", width: 2, dash: "dot" }, hoverinfo: "skip",
+      });
+      trendTxt = ` Tendencia: ${(fit.b * 10 >= 0 ? "+" : "")}${(fit.b * 10).toFixed(2)} ` +
+        `${isPrec ? "puntos%" : "°C"}/década (OLS, orientativa).`;
+    }
+  }
+
+  let maTxt = "";
+  if ($("st-ma").checked) {
+    const win = Math.max(2, Math.min(50, +$("st-ma-win").value || 10));
+    const mx = [], my = [];
+    for (let k = 0; k < vx.length; k++) {
+      const lo = Math.max(0, k - Math.floor(win / 2));
+      const hi = Math.min(vx.length, k + Math.ceil(win / 2));
+      let s = 0; for (let t = lo; t < hi; t++) s += vy[t];
+      mx.push(vx[k]); my.push(s / (hi - lo));
+    }
+    anomTraces.push({
+      x: mx, y: my, mode: "lines", name: `media móvil ${win}a`,
+      line: { color: "#f7c948", width: 2.5 },
+      hovertemplate: isPrec ? "%{x}: %{y:.0f}%<extra>móvil " + win + "a</extra>"
+                            : "%{x}: %{y:+.2f} °C<extra>móvil " + win + "a</extra>",
+    });
+    maTxt = ` Media móvil de ${win} años.`;
+  }
+
+  l2.showlegend = anomTraces.length > 1;
+  Plotly.newPlot("plot-stripes-anom", anomTraces, l2, PLOTLY_CFG);
 
   $("st-note").textContent =
-    `Media de referencia ${refA}–${refB}: ${refMean.toFixed(2)} °C. Años en blanco: sin cobertura suficiente.`;
+    (isPrec
+      ? `Normal ${refA}–${refB}: ${refMean.toFixed(0)} mm en la ventana (100% = normal). `
+      : `Media de referencia ${refA}–${refB}: ${refMean.toFixed(2)} °C. `) +
+    `Años en blanco: sin cobertura suficiente.` + trendTxt + maTxt;
 }
-
 // ==========================================================
 // PRODUCTO: Índices climáticos
 // ==========================================================

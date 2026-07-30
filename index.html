@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Explorador climático AEMET</title>
 <meta name="description" content="Análisis interactivo de series diarias de estaciones de AEMET: evolución, rachas, stripes, índices climáticos, comparadores y más.">
-<link rel="stylesheet" href="css/style.css?v=27">
+<link rel="stylesheet" href="css/style.css?v=29">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -163,6 +163,7 @@
             <option value="tmed" selected>Tmed</option>
             <option value="tmax">Tmax</option>
             <option value="tmin">Tmin</option>
+            <option value="prec">Precipitación</option>
           </select>
         </div>
         <div class="control">
@@ -176,6 +177,11 @@
         <div class="control">
           <label class="field-label" for="st-cov">Cobertura mínima <span id="st-cov-val" class="mono">80%</span></label>
           <input type="range" id="st-cov" min="50" max="100" value="80">
+        </div>
+        <div class="control">
+          <label class="chk"><input type="checkbox" id="st-trend" checked> Tendencia lineal</label>
+          <label class="chk" style="margin-top:0.3rem"><input type="checkbox" id="st-ma"> Media móvil
+            <input type="number" id="st-ma-win" class="mono" value="10" min="2" max="50" style="width:3.4rem;margin-left:0.3rem"> años</label>
         </div>
         <button id="st-run" class="btn">Calcular</button>
       </div>
@@ -501,6 +507,6 @@
   </main>
 </div>
 
-<script src="js/app.js?v=27"></script>
+<script src="js/app.js?v=29"></script>
 </body>
 </html>
