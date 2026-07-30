@@ -7,12 +7,12 @@
 
 // ---------- constantes ----------
 const DATA_URL = "data";
-const VAR_COLORS = { tmax: "#ff7a45", tmed: "#f7c948", tmin: "#4dabf7", prec: "#7ee787" };
+const VAR_COLORS = { tmax: "#ff7a45", tmed: "#f7c948", tmin: "#4dabf7", prec: "#7ee787", dtr: "#c792ea" };
 const VAR_LABELS = {
   tmax: "Tmax", tmed: "Tmed", tmin: "Tmin",
-  prec: "Precipitación", racha: "Racha viento", sol: "Sol",
+  prec: "Precipitación", racha: "Racha viento", sol: "Sol", dtr: "Amplitud térmica",
 };
-const VAR_UNITS = { tmax: "°C", tmed: "°C", tmin: "°C", prec: "mm", racha: "m/s", sol: "h" };
+const VAR_UNITS = { tmax: "°C", tmed: "°C", tmin: "°C", prec: "mm", racha: "m/s", sol: "h", dtr: "°C" };
 const ACCENT = "#ff4d4d";
 const MS_DAY = 86400000;
 const MESES = ["", "ene", "feb", "mar", "abr", "may", "jun",
@@ -106,6 +106,12 @@ function ols(xs, ys) {
 
 /** Calendario (año, mes-día) de la rejilla de una estación. */
 function makeCalendar(json) {
+  // variable derivada: amplitud térmica diaria (DTR = tmax - tmin)
+  if (json.data.tmax && json.data.tmin && !json.data.dtr) {
+    const tx = json.data.tmax, tn = json.data.tmin;
+    json.data.dtr = tx.map((x, i) => (x !== null && tn[i] !== null) ? Math.round((x - tn[i]) * 10) / 10 : null);
+    if (!json.vars.includes("dtr")) json.vars.push("dtr");
+  }
   const startMs = Date.parse(json.start + "T00:00:00Z");
   const n = json.data[json.vars[0]].length;
   const years = new Int16Array(n), md = new Int16Array(n);
@@ -651,7 +657,7 @@ function runEvolution() {
     $("ev-note").textContent = "Ventana no válida: usa formato MM-DD."; return;
   }
   const minCov = +$("ev-cov").value / 100;
-  const vars = ["tmax", "tmed", "tmin"].filter((v) => $(`ev-${v}`).checked);
+  const vars = ["tmax", "tmed", "tmin", "dtr"].filter((v) => $(`ev-${v}`).checked);
   if (!vars.length) { $("ev-note").textContent = "Selecciona al menos una variable."; return; }
 
   const traces = [];
@@ -778,7 +784,7 @@ function runStripes() {
   l1.yaxis = { visible: false };
   Plotly.newPlot("plot-stripes", [{
     x: allYears, y: [""], z: [anoms], type: "heatmap",
-    colorscale: cscale, reversescale: false, zmid: center,
+    colorscale: cscale, reversescale: false,
     zmin: center - amax, zmax: center + amax, showscale: false,
     hovertemplate: isPrec ? "%{x}: %{z:.0f}% de la normal<extra></extra>"
                           : "%{x}: %{z:+.2f} °C<extra></extra>",
@@ -794,7 +800,7 @@ function runStripes() {
   const anomTraces = [{
     x: allYears, y: anoms, type: "bar", name: "anomalía", showlegend: false,
     marker: { color: anoms, colorscale: cscale, reversescale: false,
-              cmid: center, cmin: center - amax, cmax: center + amax },
+              cmin: center - amax, cmax: center + amax },
     hovertemplate: isPrec ? "%{x}: %{y:.0f}%<extra></extra>" : "%{x}: %{y:+.2f} °C<extra></extra>",
   }];
 

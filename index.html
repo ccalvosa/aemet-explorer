@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Explorador climático AEMET</title>
 <meta name="description" content="Análisis interactivo de series diarias de estaciones de AEMET: evolución, rachas, stripes, índices climáticos, comparadores y más.">
-<link rel="stylesheet" href="css/style.css?v=29">
+<link rel="stylesheet" href="css/style.css?v=30">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -129,6 +129,7 @@
             <label class="chk chk-tmax"><input type="checkbox" id="ev-tmax" checked> Tmax</label>
             <label class="chk chk-tmed"><input type="checkbox" id="ev-tmed" checked> Tmed</label>
             <label class="chk chk-tmin"><input type="checkbox" id="ev-tmin" checked> Tmin</label>
+            <label class="chk"><input type="checkbox" id="ev-dtr"> DTR</label>
           </div>
         </div>
         <div class="control">
@@ -163,6 +164,7 @@
             <option value="tmed" selected>Tmed</option>
             <option value="tmax">Tmax</option>
             <option value="tmin">Tmin</option>
+            <option value="dtr">Amplitud térmica (DTR)</option>
             <option value="prec">Precipitación</option>
           </select>
         </div>
@@ -303,6 +305,7 @@
             <option value="tmax" selected>Tmax</option>
             <option value="tmed">Tmed</option>
             <option value="tmin">Tmin</option>
+            <option value="dtr">Amplitud térmica (DTR)</option>
           </select>
         </div>
         <div class="control">
@@ -355,6 +358,7 @@
             <option value="tmed" selected>Tmed</option>
             <option value="tmax">Tmax</option>
             <option value="tmin">Tmin</option>
+            <option value="dtr">Amplitud térmica (DTR)</option>
           </select>
         </div>
         <div class="control">
@@ -487,6 +491,7 @@
             <option value="tmed" selected>Tmed</option>
             <option value="tmax">Tmax</option>
             <option value="tmin">Tmin</option>
+            <option value="dtr">Amplitud térmica (DTR)</option>
           </select>
         </div>
         <div class="control">
@@ -507,6 +512,6 @@
   </main>
 </div>
 
-<script src="js/app.js?v=29"></script>
+<script src="js/app.js?v=30"></script>
 </body>
 </html>
