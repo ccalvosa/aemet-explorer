@@ -767,7 +767,7 @@ function runStripes() {
   const yrs = [...vals.keys()].sort((a, b) => a - b);
   const y0 = yrs[0], y1 = yrs[yrs.length - 1];
   const center = isPrec ? 100 : 0;
-  const cscale = isPrec ? "BrBG" : "RdBu";
+  const cscale = isPrec ? [[0,"#8c510a"],[0.25,"#d8b365"],[0.5,"#f6e8c3"],[0.75,"#5ab4ac"],[1,"#01665e"]] : "RdBu";
   const allYears = [], anoms = [];
   for (let y = y0; y <= y1; y++) {
     allYears.push(y);
@@ -1630,9 +1630,9 @@ async function runNacional() {
   const traces = [
     { x: xs, y: ys, type: "bar", name: isPrec ? "% normal" : "anomalía",
       marker: { color: ys.map((y) => isPrec ? y - 100 : y),
-                colorscale: isPrec ? "BrBG" : "RdBu",
+                colorscale: isPrec ? [[0,"#8c510a"],[0.25,"#d8b365"],[0.5,"#f6e8c3"],[0.75,"#5ab4ac"],[1,"#01665e"]] : "RdBu",
                 reversescale: false,
-                cmin: isPrec ? -amax : -amax, cmax: amax, cmid: 0 },
+                cmin: -amax, cmax: amax },
       hovertemplate: "%{x}: %{y:.1f}<extra></extra>" },
     { x: xs, y: ns, yaxis: "y2", mode: "lines", name: "nº estaciones",
       line: { color: "#8b949e", width: 1 }, hovertemplate: "%{x}: %{y} est.<extra></extra>" },
