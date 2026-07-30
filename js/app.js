@@ -955,17 +955,37 @@ function runComparator() {
   const minCov = +$("co-cov").value / 100;
   const X = S.json.data[vx], Y = S.json.data[vy];
 
-  let mdMin = Infinity, mdMax = -Infinity, nRef = 0;
-  for (let i = 0; i < X.length; i++) {
-    if (S.years[i] !== refYear || X[i] === null || Y[i] === null) continue;
-    nRef++;
-    if (S.md[i] < mdMin) mdMin = S.md[i];
-    if (S.md[i] > mdMax) mdMax = S.md[i];
-  }
-  if (!nRef) {
-    $("co-note").textContent = `El año ${refYear} no tiene datos válidos de ambas variables.`;
-    Plotly.purge("plot-comparador");
-    return;
+  // ventana: manual si el usuario rellena MM-DD; si no, la del año de referencia
+  const mdManS = parseMd($("co-md-start").value);
+  const mdManE = parseMd($("co-md-end").value);
+  const manual = mdManS !== null && mdManE !== null;
+  let mdMin, mdMax, nRef;
+  if (manual) {
+    mdMin = mdManS; mdMax = mdManE;
+    const g = aggregateWindow(X, mdMin, mdMax);
+    const gRef = g.get(refYear);
+    const hRef = aggregateWindow(Y, mdMin, mdMax).get(refYear);
+    nRef = Math.min(gRef ? gRef.n : 0, hRef ? hRef.n : 0);
+    if (!nRef) {
+      $("co-note").textContent = `El año ${refYear} no tiene datos en ${mdLabel(mdMin)}–${mdLabel(mdMax)}.`;
+      Plotly.purge("plot-comparador"); return;
+    }
+  } else {
+    if ($("co-md-start").value.trim() || $("co-md-end").value.trim()) {
+      $("co-note").textContent = "Ventana incompleta o mal formada (MM-DD). Rellena ambos campos o déjalos vacíos.";
+      Plotly.purge("plot-comparador"); return;
+    }
+    mdMin = Infinity; mdMax = -Infinity; nRef = 0;
+    for (let i = 0; i < X.length; i++) {
+      if (S.years[i] !== refYear || X[i] === null || Y[i] === null) continue;
+      nRef++;
+      if (S.md[i] < mdMin) mdMin = S.md[i];
+      if (S.md[i] > mdMax) mdMax = S.md[i];
+    }
+    if (!nRef) {
+      $("co-note").textContent = `El año ${refYear} no tiene datos válidos de ambas variables.`;
+      Plotly.purge("plot-comparador"); return;
+    }
   }
 
   const gx = aggregateWindow(X, mdMin, mdMax);
@@ -1019,7 +1039,9 @@ function runComparator() {
     rankTxt = ` En ${VAR_LABELS[vx]}, ${refYear} es el ${warmer + 1}º más cálido de ${rows.length} comparables.`;
   }
   $("co-note").textContent =
-    `Ventana definida por los ${nRef} días con dato de ${refYear}; ` +
+    (manual
+      ? `Ventana manual ${mdLabel(mdMin)}–${mdLabel(mdMax)} (${nRef} días con dato en ${refYear}); `
+      : `Ventana definida por los ${nRef} días con dato de ${refYear}; `) +
     `${rows.length} años con cobertura ≥ ${Math.round(minCov * 100)}%.` + rankTxt;
 }
 

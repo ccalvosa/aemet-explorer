@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Explorador climático AEMET</title>
 <meta name="description" content="Análisis interactivo de series diarias de estaciones de AEMET: evolución, rachas, stripes, índices climáticos, comparadores y más.">
-<link rel="stylesheet" href="css/style.css?v=26">
+<link rel="stylesheet" href="css/style.css?v=27">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -271,6 +271,14 @@
           </select>
         </div>
         <div class="control">
+          <label class="field-label" for="co-md-start">Ventana (opcional, MM-DD)</label>
+          <div class="inline">
+            <input type="text" id="co-md-start" class="mono md-input" placeholder="auto" title="Vacío = ventana del año de referencia">
+            <span class="sep">→</span>
+            <input type="text" id="co-md-end" class="mono md-input" placeholder="auto">
+          </div>
+        </div>
+        <div class="control">
           <label class="field-label" for="co-cov">Cobertura mínima <span id="co-cov-val" class="mono">90%</span></label>
           <input type="range" id="co-cov" min="50" max="100" value="90">
         </div>
@@ -493,6 +501,6 @@
   </main>
 </div>
 
-<script src="js/app.js?v=26"></script>
+<script src="js/app.js?v=27"></script>
 </body>
 </html>
