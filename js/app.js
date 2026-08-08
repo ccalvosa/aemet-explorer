@@ -969,16 +969,34 @@ function runStreaks() {
   const test = { ">=": (x) => x >= thr, ">": (x) => x > thr,
                  "<=": (x) => x <= thr, "<": (x) => x < thr }[op];
 
+  // ventana MM-DD opcional: se aplica igual cada año; salir de ella corta la racha
+  const mdS = parseMd($("ra-md-start").value);
+  const mdE = parseMd($("ra-md-end").value);
+  const manual = mdS !== null && mdE !== null;
+  if (!manual && ($("ra-md-start").value.trim() || $("ra-md-end").value.trim())) {
+    $("ra-note").textContent = "Ventana incompleta o mal formada (MM-DD). Rellena ambos campos o déjalos vacíos.";
+    return;
+  }
+  const wraps = manual && mdS > mdE;
+  const inWindow = (i) => {
+    if (!manual) return true;
+    const m = S.md[i];
+    return wraps ? (m >= mdS || m <= mdE) : (m >= mdS && m <= mdE);
+  };
+
   const streaks = [];
   const perYear = new Map();
   let runStart = -1, runLen = 0;
   for (let i = 0; i <= values.length; i++) {
     const x = i < values.length ? values[i] : null;
-    const ok = x !== null && test(x);
+    const inWin = i < values.length && inWindow(i);
+    const ok = inWin && x !== null && test(x);
     if (ok) {
       if (!runLen) runStart = i;
       runLen++;
-      perYear.set(S.years[i], (perYear.get(S.years[i]) || 0) + 1);
+      // conteo anual dentro de ventana que cruza el año: al año en que termina
+      const gy = wraps && S.md[i] >= mdS ? S.years[i] + 1 : S.years[i];
+      perYear.set(gy, (perYear.get(gy) || 0) + 1);
     } else {
       if (runLen) streaks.push({ start: runStart, len: runLen });
       runLen = 0;
@@ -1006,6 +1024,7 @@ function runStreaks() {
   }], layout, PLOTLY_CFG);
 
   $("ra-note").textContent =
+    (manual ? `Ventana ${mdLabel(mdS)}–${mdLabel(mdE)} aplicada cada año (las rachas no cruzan de un año al siguiente). ` : "") +
     "Los días sin dato cortan las rachas: en años con huecos la racha real pudo ser más larga.";
 }
 

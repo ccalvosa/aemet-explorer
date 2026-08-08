@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Explorador climático AEMET</title>
 <meta name="description" content="Análisis interactivo de series diarias de estaciones de AEMET: evolución, rachas, stripes, índices climáticos, comparadores y más.">
-<link rel="stylesheet" href="css/style.css?v=31">
+<link rel="stylesheet" href="css/style.css?v=32">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -233,6 +233,14 @@
             </select>
             <input type="number" id="ra-thr" class="mono thr-input" value="35" step="0.5">
             <span id="ra-unit" class="unit">°C</span>
+          </div>
+        </div>
+        <div class="control">
+          <label class="field-label" for="ra-md-start">Ventana (opcional, MM-DD)</label>
+          <div class="inline">
+            <input type="text" id="ra-md-start" class="mono md-input" placeholder="auto" title="Vacío = todo el año">
+            <span class="sep">→</span>
+            <input type="text" id="ra-md-end" class="mono md-input" placeholder="auto">
           </div>
         </div>
         <button id="ra-run" class="btn">Calcular</button>
@@ -512,6 +520,6 @@
   </main>
 </div>
 
-<script src="js/app.js?v=31"></script>
+<script src="js/app.js?v=32"></script>
 </body>
 </html>
