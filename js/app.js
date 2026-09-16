@@ -958,7 +958,39 @@ function runIndices() {
 // PRODUCTO: Rachas
 // ==========================================================
 
+/** Ventana MM-DD opcional compartida por los dos modos. */
+function streakWindow() {
+  const S = state.station;
+  const mdS = parseMd($("ra-md-start").value);
+  const mdE = parseMd($("ra-md-end").value);
+  const manual = mdS !== null && mdE !== null;
+  if (!manual && ($("ra-md-start").value.trim() || $("ra-md-end").value.trim())) return null;
+  const wraps = manual && mdS > mdE;
+  return {
+    manual, mdS, mdE, wraps,
+    inWindow: (i) => {
+      if (!manual) return true;
+      const m = S.md[i];
+      return wraps ? (m >= mdS || m <= mdE) : (m >= mdS && m <= mdE);
+    },
+    groupYear: (i) => (wraps && S.md[i] >= mdS ? S.years[i] + 1 : S.years[i]),
+    label: manual ? `Ventana ${mdLabel(mdS)}–${mdLabel(mdE)} aplicada cada año (las rachas no cruzan de un año al siguiente). ` : "",
+  };
+}
+
+function setStreakHeader(cols) {
+  $("ra-table").querySelector("thead").innerHTML =
+    "<tr>" + cols.map((c) => `<th>${c}</th>`).join("") + "</tr>";
+}
+
 function runStreaks() {
+  const seca = $("ra-modo").value === "seca";
+  document.querySelectorAll(".ra-diaria").forEach((e) => { e.hidden = seca; });
+  document.querySelectorAll(".ra-seca").forEach((e) => { e.hidden = !seca; });
+  if (seca) runDrySpells(); else runStreaksDaily();
+}
+
+function runStreaksDaily() {
   const S = state.station;
   const v = $("ra-var").value;
   const op = $("ra-op").value;
@@ -969,33 +1001,24 @@ function runStreaks() {
   const test = { ">=": (x) => x >= thr, ">": (x) => x > thr,
                  "<=": (x) => x <= thr, "<": (x) => x < thr }[op];
 
-  // ventana MM-DD opcional: se aplica igual cada año; salir de ella corta la racha
-  const mdS = parseMd($("ra-md-start").value);
-  const mdE = parseMd($("ra-md-end").value);
-  const manual = mdS !== null && mdE !== null;
-  if (!manual && ($("ra-md-start").value.trim() || $("ra-md-end").value.trim())) {
+  const W = streakWindow();
+  if (!W) {
     $("ra-note").textContent = "Ventana incompleta o mal formada (MM-DD). Rellena ambos campos o déjalos vacíos.";
     return;
   }
-  const wraps = manual && mdS > mdE;
-  const inWindow = (i) => {
-    if (!manual) return true;
-    const m = S.md[i];
-    return wraps ? (m >= mdS || m <= mdE) : (m >= mdS && m <= mdE);
-  };
 
   const streaks = [];
   const perYear = new Map();
   let runStart = -1, runLen = 0;
   for (let i = 0; i <= values.length; i++) {
     const x = i < values.length ? values[i] : null;
-    const inWin = i < values.length && inWindow(i);
+    const inWin = i < values.length && W.inWindow(i);
     const ok = inWin && x !== null && test(x);
     if (ok) {
       if (!runLen) runStart = i;
       runLen++;
       // conteo anual dentro de ventana que cruza el año: al año en que termina
-      const gy = wraps && S.md[i] >= mdS ? S.years[i] + 1 : S.years[i];
+      const gy = W.groupYear(i);
       perYear.set(gy, (perYear.get(gy) || 0) + 1);
     } else {
       if (runLen) streaks.push({ start: runStart, len: runLen });
@@ -1004,6 +1027,9 @@ function runStreaks() {
   }
   streaks.sort((a, b) => b.len - a.len || b.start - a.start);
 
+  $("ra-title-left").textContent = "Días por año que cumplen la condición";
+  $("ra-title-right").textContent = "Rachas más largas de la serie";
+  setStreakHeader(["#", "Días", "Inicio", "Fin"]);
   const tbody = $("ra-table").querySelector("tbody");
   tbody.innerHTML = "";
   streaks.slice(0, 15).forEach((s, i) => {
@@ -1023,9 +1049,125 @@ function runStreaks() {
     hovertemplate: "%{x}: %{y} días<extra></extra>",
   }], layout, PLOTLY_CFG);
 
-  $("ra-note").textContent =
-    (manual ? `Ventana ${mdLabel(mdS)}–${mdLabel(mdE)} aplicada cada año (las rachas no cruzan de un año al siguiente). ` : "") +
+  $("ra-note").textContent = W.label +
     "Los días sin dato cortan las rachas: en años con huecos la racha real pudo ser más larga.";
+}
+
+/**
+ * Períodos secos por acumulado: tramos consecutivos cuya precipitación TOTAL
+ * queda por debajo del umbral. Como la precipitación no es negativa, la suma
+ * crece al alargar la ventana y basta un barrido de dos punteros: para cada
+ * día final se busca el inicio más temprano que aún cumple.
+ * No es el CDD de ETCCDI (que exige cada día < 1 mm); aquí se admiten
+ * lloviznas mientras el total del período no alcance el umbral.
+ */
+function runDrySpells() {
+  const S = state.station;
+  const thr = +$("ra-seca-thr").value;
+  const nullsZero = $("ra-nulls").value === "cero";
+  const showAll = $("ra-overlap").value === "todas";
+  const values = S.json.data.prec;
+  if (!values) {
+    $("ra-note").textContent = "Esta estación no tiene serie de precipitación.";
+    Plotly.purge("plot-rachas"); return;
+  }
+  if (!(thr > 0)) { $("ra-note").textContent = "El umbral debe ser mayor que 0 mm."; return; }
+
+  const W = streakWindow();
+  if (!W) {
+    $("ra-note").textContent = "Ventana incompleta o mal formada (MM-DD). Rellena ambos campos o déjalos vacíos.";
+    return;
+  }
+
+  // 1) segmentos contiguos utilizables (ventana + tratamiento de nulos)
+  const segments = [];
+  let seg = null;
+  for (let i = 0; i < values.length; i++) {
+    const usable = W.inWindow(i) && (values[i] !== null || nullsZero);
+    if (usable) { if (!seg) { seg = { i0: i, n: 0 }; segments.push(seg); } seg.n++; }
+    else seg = null;
+  }
+
+  // 2) dos punteros dentro de cada segmento: máximo tramo con suma < umbral
+  const cands = [];
+  let nullsIn = 0;
+  for (const s of segments) {
+    let l = s.i0, sum = 0;
+    for (let r = s.i0; r < s.i0 + s.n; r++) {
+      sum += values[r] === null ? 0 : values[r];
+      while (sum >= thr && l <= r) { sum -= values[l] === null ? 0 : values[l]; l++; }
+      if (l <= r) cands.push({ start: l, len: r - l + 1, sum });
+    }
+  }
+  if (!cands.length) {
+    $("ra-note").textContent = `Ningún período acumula menos de ${thr} mm con estos ajustes.`;
+    Plotly.purge("plot-rachas");
+    $("ra-table").querySelector("tbody").innerHTML = "";
+    return;
+  }
+
+  // 3) máximo por año (sobre los tramos maximales, independiente del listado)
+  const perYear = new Map();
+  for (const c of cands) {
+    const gy = W.groupYear(c.start);
+    if (c.len > (perYear.get(gy) || 0)) perYear.set(gy, c.len);
+  }
+
+  // 4) listado: solapado o episodios disjuntos por longitud
+  const sorted = [...cands].sort((a, b) => b.len - a.len || a.start - b.start);
+  let list;
+  if (showAll) {
+    list = sorted.slice(0, 15);
+  } else {
+    list = [];
+    for (const c of sorted) {
+      if (list.length >= 15) break;
+      const end = c.start + c.len - 1;
+      if (list.some((k) => c.start <= k.start + k.len - 1 && k.start <= end)) continue;
+      list.push(c);
+    }
+  }
+
+  // 5) huecos dentro de los episodios listados (solo informativo)
+  if (nullsZero) {
+    for (const c of list) {
+      for (let i = c.start; i < c.start + c.len; i++) if (values[i] === null) nullsIn++;
+    }
+  }
+
+  $("ra-title-left").textContent = "Período seco más largo por año (días)";
+  $("ra-title-right").textContent = showAll
+    ? "Tramos secos más largos (pueden solaparse)"
+    : "Episodios secos más largos (sin solapar)";
+  setStreakHeader(["#", "Días", "Inicio", "Fin", "mm"]);
+  const tbody = $("ra-table").querySelector("tbody");
+  tbody.innerHTML = "";
+  list.forEach((c, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${i + 1}</td><td>${c.len}</td>` +
+      `<td>${fmtDate(S.startMs, c.start)}</td>` +
+      `<td>${fmtDate(S.startMs, c.start + c.len - 1)}</td>` +
+      `<td>${c.sum.toFixed(1)}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  const years = [...perYear.keys()].sort((a, b) => a - b);
+  const layout = baseLayout(`Períodos secos · total < ${thr} mm acumulados`);
+  layout.yaxis.title = { text: "días" };
+  Plotly.newPlot("plot-rachas", [{
+    x: years, y: years.map((y) => perYear.get(y)), type: "bar",
+    marker: { color: years.map((y) => perYear.get(y)),
+              colorscale: [[0, "#f6e8c3"], [0.5, "#d8b365"], [1, "#8c510a"]] },
+    hovertemplate: "%{x}: %{y} días<extra></extra>",
+  }], layout, PLOTLY_CFG);
+
+  $("ra-note").textContent = W.label +
+    `Período seco = tramo consecutivo cuya precipitación total suma menos de ${thr} mm. ` +
+    `No equivale al CDD de ETCCDI, que exige que cada día quede por debajo del umbral. ` +
+    (nullsZero
+      ? `Los días sin dato cuentan como 0 mm${nullsIn ? ` (${nullsIn} en los episodios listados)` : ""}: un hueco instrumental puede inflar la duración.`
+      : "Los días sin dato cortan el período: en años con huecos la sequía real pudo ser más larga.") +
+    (showAll ? " El listado incluye subrachas del mismo episodio." : "");
 }
 
 // ==========================================================
@@ -1823,6 +1965,7 @@ function bindControls() {
   $("na-min").addEventListener("input", () => { $("na-min-val").textContent = $("na-min").value; });
   $("pe-tipo").addEventListener("change", populatePeriodSubs);
   populatePeriodSubs();
+  $("ra-modo").addEventListener("change", runStreaks);
   $("ra-var").addEventListener("change", () => {
     $("ra-unit").textContent = VAR_UNITS[$("ra-var").value];
   });
