@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=40">
+<link rel="stylesheet" href="css/style.css?v=41">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -70,11 +70,11 @@
   <div class="feature-grid">
     <div class="feature"><div class="feature-ico">📅</div><h3>Este año</h3><p>Cada día frente a la normal y los récords. Calendario de anomalías.</p></div>
     <div class="feature"><div class="feature-ico">📈</div><h3>Tendencias</h3><p>Evolución anual, warming stripes, noches tropicales, heladas…</p></div>
-    <div class="feature"><div class="feature-ico">🔥</div><h3>Extremos</h3><p>Rachas, olas de calor y de frío, períodos secos y distribuciones.</p></div>
-    <div class="feature"><div class="feature-ico">⚖️</div><h3>Comparar</h3><p>Años entre sí, dos estaciones frente a frente o toda España.</p></div>
+    <div class="feature"><div class="feature-ico">🔥</div><h3>Extremos</h3><p>Rachas, olas de calor y de frío, períodos de retorno y sequías.</p></div>
+    <div class="feature"><div class="feature-ico">🗺️</div><h3>Toda España</h3><p>Mapa de anomalías, regiones, años más cálidos y récords de toda la red.</p></div>
   </div>
 
-  <p class="hero-alt">¿Prefieres la visión general? <button class="link-btn" id="go-national">Ver la evolución de toda España →</button></p>
+  <p class="hero-alt">¿Prefieres la visión general? <button class="link-btn" id="go-national">Ver el clima de toda España →</button></p>
   <p class="hero-alt" style="margin-top:0.4rem">Todo se calcula en tu navegador. Ningún dato sale de esta página.</p>
 </section>
 
@@ -116,7 +116,6 @@
       <div class="nav-group">Este año</div>
       <button class="tab active" data-tab="anio"><span class="ico">📅</span>Año en curso</button>
       <button class="tab" data-tab="calendario"><span class="ico">🗓️</span>Calendario</button>
-      <button class="tab" data-tab="periodos"><span class="ico">↔️</span>Comparar períodos</button>
 
       <div class="nav-group">Tendencias</div>
       <button class="tab" data-tab="evolucion"><span class="ico">📈</span>Evolución</button>
@@ -127,11 +126,15 @@
       <div class="nav-group">Extremos</div>
       <button class="tab" data-tab="rachas"><span class="ico">⛓️</span>Rachas</button>
       <button class="tab" data-tab="olas"><span class="ico">🔥</span>Olas de calor y frío</button>
-      <button class="tab" data-tab="distribucion"><span class="ico">📊</span>Distribución</button>
+      <button class="tab" data-tab="retorno"><span class="ico">⏳</span>Períodos de retorno</button>
+      <button class="tab" data-tab="spi"><span class="ico">🏜️</span>Sequía (SPI)</button>
 
       <div class="nav-group">Comparar</div>
       <button class="tab" data-tab="comparador"><span class="ico">🎯</span>Comparador de años</button>
+      <button class="tab" data-tab="periodos"><span class="ico">↔️</span>Comparar períodos</button>
       <button class="tab" data-tab="duelo"><span class="ico">⚖️</span>Dos estaciones</button>
+
+      <div class="nav-group">Toda España</div>
       <button class="tab" data-tab="nacional"><span class="ico">🇪🇸</span>España</button>
     </nav>
 
@@ -210,6 +213,7 @@
             <option value="tmin">Tmin</option>
             <option value="dtr">Amplitud térmica (DTR)</option>
             <option value="prec">Precipitación</option>
+            <option value="sol">Horas de sol</option>
           </select>
         </div>
         <div class="control">
@@ -377,7 +381,7 @@
 
     <!-- ---- TAB: DISTRIBUCIÓN ---- -->
     <section id="panel-distribucion" class="panel card" hidden>
-      <header class="panel-head"><h2>Distribución</h2><p>Cómo se reparten los valores diarios en dos períodos de años distintos: ¿se ha desplazado la curva?</p></header>
+      <header class="panel-head"><h2>Comparar períodos</h2><p>Cómo se reparten los valores diarios en dos períodos de años distintos: ¿se ha desplazado la curva?</p><div class="seg seg-switch"><button data-go="periodos">Día a día</button><button data-go="distribucion" class="on">Distribución</button></div></header>
       <div class="controls">
         <div class="control">
           <label class="field-label" for="di-var">Variable</label>
@@ -495,7 +499,7 @@
 
     <!-- ---- TAB: COMPARAR PERÍODOS ---- -->
     <section id="panel-periodos" class="panel card" hidden>
-      <header class="panel-head"><h2>Comparar períodos</h2><p>Dos meses, estaciones o años frente a frente, día a día.</p></header>
+      <header class="panel-head"><h2>Comparar períodos</h2><p>Dos meses, estaciones o años frente a frente, día a día.</p><div class="seg seg-switch"><button data-go="periodos" class="on">Día a día</button><button data-go="distribucion">Distribución</button></div></header>
       <div class="controls">
         <div class="control">
           <label class="field-label" for="pe-var">Variable</label>
@@ -535,9 +539,15 @@
 
     <!-- ---- TAB: NACIONAL ---- -->
     <section id="panel-nacional" class="panel card" hidden>
-      <header class="panel-head"><h2>España</h2><p>Anomalía media del conjunto de estaciones de la red, año a año. No necesita elegir estación.</p></header>
+      <header class="panel-head"><h2>España</h2><p>Toda la red de estaciones a la vez: cómo ha evolucionado, dónde, en qué regiones y cuántos récords se baten. No hace falta elegir estación.</p></header>
+      <div class="seg seg-lg" id="na-view">
+        <button data-view="evol" class="on">📈 Evolución</button>
+        <button data-view="mapa">🗺️ Mapa</button>
+        <button data-view="regiones">🧭 Regiones</button>
+        <button data-view="recs">🏆 Récords</button>
+      </div>
       <div class="controls">
-        <div class="control">
+        <div class="control" data-views="evol mapa regiones">
           <label class="field-label" for="na-var">Variable</label>
           <select id="na-var">
             <option value="tmed" selected>Tmed (anomalía °C)</option>
@@ -546,13 +556,200 @@
             <option value="prec">Precipitación (% de la normal)</option>
           </select>
         </div>
-        <div class="control">
-          <label class="field-label" for="na-min">Mínimo de estaciones <span id="na-min-val" class="mono">50</span></label>
-          <input type="range" id="na-min" min="10" max="200" step="10" value="50">
+        <div class="control" data-views="evol mapa regiones">
+          <label class="field-label" for="na-per">Período del año</label>
+          <select id="na-per">
+            <option value="anio" selected>Año completo</option>
+            <optgroup label="Estaciones">
+              <option value="DJF">Invierno (dic–feb)</option>
+              <option value="MAM">Primavera (mar–may)</option>
+              <option value="JJA">Verano (jun–ago)</option>
+              <option value="SON">Otoño (sep–nov)</option>
+            </optgroup>
+            <optgroup label="Meses">
+              <option value="m1">Enero</option><option value="m2">Febrero</option><option value="m3">Marzo</option>
+              <option value="m4">Abril</option><option value="m5">Mayo</option><option value="m6">Junio</option>
+              <option value="m7">Julio</option><option value="m8">Agosto</option><option value="m9">Septiembre</option>
+              <option value="m10">Octubre</option><option value="m11">Noviembre</option><option value="m12">Diciembre</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="control" data-views="evol mapa regiones">
+          <label class="field-label" for="na-red">Estaciones</label>
+          <select id="na-red">
+            <option value="todas">Todas las disponibles cada año</option>
+            <option value="1961" selected>Solo serie larga (desde 1961)</option>
+            <option value="1981">Solo serie larga (desde 1981)</option>
+          </select>
+        </div>
+        <div class="control" data-views="evol regiones">
+          <label class="field-label" for="na-peso">Promedio</label>
+          <select id="na-peso">
+            <option value="area" selected>Por área (celdas de 1°)</option>
+            <option value="estacion">Por estación</option>
+          </select>
+        </div>
+        <div class="control" data-views="evol mapa regiones">
+          <label class="field-label" for="na-trend">Tendencias desde</label>
+          <select id="na-trend">
+            <option value="1961" selected>1961</option>
+            <option value="1971">1971</option>
+            <option value="1981">1981</option>
+            <option value="1991">1991</option>
+          </select>
+        </div>
+        <div class="control" data-views="evol regiones">
+          <label class="field-label" for="na-min">Mínimo de estaciones por año <span id="na-min-val" class="num">30</span></label>
+          <input type="range" id="na-min" min="10" max="200" step="10" value="30">
+        </div>
+        <div class="control" data-views="mapa">
+          <label class="field-label" for="na-map-mode">Mapa de</label>
+          <select id="na-map-mode">
+            <option value="anom" selected>Anomalía de un año</option>
+            <option value="trend">Tendencia por década</option>
+          </select>
+        </div>
+        <div class="control control-wide" data-views="mapa" id="na-year-wrap">
+          <label class="field-label" for="na-map-year">Año <span id="na-map-year-val" class="num"></span></label>
+          <div class="inline">
+            <button id="na-play" class="chip" type="button" title="Reproducir año a año">▶</button>
+            <input type="range" id="na-map-year" min="1961" max="2025" value="2025" style="width:100%">
+          </div>
+        </div>
+        <div class="control" data-views="regiones">
+          <label class="field-label" for="na-grp">Agrupar por</label>
+          <select id="na-grp">
+            <option value="region" selected>Región</option>
+            <option value="alt">Altitud</option>
+          </select>
+        </div>
+        <div class="control control-wide" data-views="recs">
+          <label class="field-label" for="na-rec-type">Récords</label>
+          <select id="na-rec-type">
+            <option value="calor" selected>Tmax más alta vs Tmin más baja</option>
+            <option value="noches">Noche más cálida (Tmin más alta) vs día más frío (Tmax más baja)</option>
+            <option value="lluvia">Lluvia máxima en 24 h</option>
+          </select>
+        </div>
+        <div class="control" data-views="recs">
+          <label class="field-label" for="na-rec-k">La estación debe llevar</label>
+          <select id="na-rec-k">
+            <option value="20">≥ 20 años de datos</option>
+            <option value="30" selected>≥ 30 años de datos</option>
+            <option value="40">≥ 40 años de datos</option>
+          </select>
         </div>
       </div>
-      <div id="plot-nacional" class="plot"></div>
+
+      <div class="na-sub" data-view="evol">
+        <div id="plot-nacional" class="plot"></div>
+        <h3 class="block-title">¿Qué parte de la red estuvo por encima o por debajo de lo normal?</h3>
+        <div id="plot-nacional-cons" class="plot plot-half"></div>
+        <h3 class="block-title">Clasificación de años</h3>
+        <div class="split split-even">
+          <div class="table-wrap"><table id="na-rank-hi" class="data-table"><thead></thead><tbody></tbody></table></div>
+          <div class="table-wrap"><table id="na-rank-lo" class="data-table"><thead></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+      <div class="na-sub" data-view="mapa" hidden>
+        <div id="plot-nacional-mapa" class="plot plot-map"></div>
+      </div>
+      <div class="na-sub" data-view="regiones" hidden>
+        <div id="plot-nacional-reg" class="plot"></div>
+        <h3 class="block-title">Tendencia por grupo</h3>
+        <div id="plot-nacional-regtr" class="plot plot-half"></div>
+      </div>
+      <div class="na-sub" data-view="recs" hidden>
+        <div id="plot-nacional-rec" class="plot"></div>
+        <h3 class="block-title">Por décadas</h3>
+        <div id="plot-nacional-recdec" class="plot plot-half"></div>
+      </div>
       <p id="na-note" class="note"></p>
+    </section>
+
+    <!-- ---- TAB: PERÍODOS DE RETORNO ---- -->
+    <section id="panel-retorno" class="panel card" hidden>
+      <header class="panel-head"><h2>Períodos de retorno</h2><p>¿Cada cuánto cabe esperar un valor así? Ajuste GEV a los extremos de cada año. Compara dos épocas para ver cuánto ha cambiado.</p></header>
+      <div class="controls">
+        <div class="control control-wide">
+          <label class="field-label" for="rt-var">Extremo anual</label>
+          <select id="rt-var">
+            <option value="txx" selected>Tmax más alta del año</option>
+            <option value="tnx">Tmin más alta del año (noche más cálida)</option>
+            <option value="tnn">Tmin más baja del año</option>
+            <option value="rx1">Lluvia máxima en 24 h</option>
+            <option value="rgx">Racha de viento máxima</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="rt-mode">Ajuste</label>
+          <select id="rt-mode">
+            <option value="dos" selected>Comparar dos épocas</option>
+            <option value="una">Toda la serie</option>
+          </select>
+        </div>
+        <div class="control rt-dos">
+          <label class="field-label">Época A</label>
+          <div class="inline">
+            <input type="number" id="rt-a1" class="num yr-input" value="1951">
+            <span class="sep">–</span>
+            <input type="number" id="rt-a2" class="num yr-input" value="1990">
+          </div>
+        </div>
+        <div class="control rt-dos">
+          <label class="field-label">Época B</label>
+          <div class="inline">
+            <input type="number" id="rt-b1" class="num yr-input" value="1991">
+            <input type="number" id="rt-b2" class="num yr-input" value="2026">
+          </div>
+        </div>
+        <div class="control">
+          <label class="field-label" for="rt-val">¿Cada cuánto se alcanza…?</label>
+          <div class="inline">
+            <input type="number" id="rt-val" class="num thr-input" step="0.5" placeholder="récord">
+            <span id="rt-unit" class="unit">°C</span>
+          </div>
+        </div>
+      </div>
+      <div class="split">
+        <div id="plot-retorno" class="plot"></div>
+        <div>
+          <h3 class="block-title">Valor esperado según el período de retorno</h3>
+          <div class="table-wrap"><table id="rt-table" class="data-table"><thead></thead><tbody></tbody></table></div>
+          <p id="rt-answer" class="answer"></p>
+        </div>
+      </div>
+      <p id="rt-note" class="note"></p>
+    </section>
+
+    <!-- ---- TAB: SEQUÍA (SPI) ---- -->
+    <section id="panel-spi" class="panel card" hidden>
+      <header class="panel-head"><h2>Sequía (SPI)</h2><p>Índice de precipitación estandarizado: compara la lluvia acumulada en los últimos meses con lo normal para esa época del año. Por debajo de −1, sequía; por encima de +1, período húmedo.</p></header>
+      <div class="controls">
+        <div class="control">
+          <label class="field-label" for="spi-k">Lluvia acumulada en</label>
+          <select id="spi-k">
+            <option value="1">1 mes</option>
+            <option value="3">3 meses</option>
+            <option value="6">6 meses</option>
+            <option value="12" selected>12 meses</option>
+            <option value="24">24 meses</option>
+          </select>
+        </div>
+        <div class="control">
+          <label class="field-label" for="spi-view">Mostrar</label>
+          <select id="spi-view">
+            <option value="all">Toda la serie</option>
+            <option value="30" selected>Últimos 30 años</option>
+            <option value="10">Últimos 10 años</option>
+          </select>
+        </div>
+      </div>
+      <p id="spi-now" class="answer"></p>
+      <div id="plot-spi" class="plot"></div>
+      <h3 class="block-title">Calendario de sequías y períodos húmedos</h3>
+      <div id="plot-spi-cal" class="plot plot-tall"></div>
+      <p id="spi-note" class="note"></p>
     </section>
 
     <!-- ---- TAB: DOS ESTACIONES ---- -->
@@ -599,6 +796,6 @@
   <span>Hecho por <a href="https://x.com/MeteoZGZ" target="_blank" rel="noopener">@MeteoZGZ</a></span>
 </footer>
 
-<script src="js/app.js?v=40"></script>
+<script src="js/app.js?v=41"></script>
 </body>
 </html>

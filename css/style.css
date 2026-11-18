@@ -645,6 +645,31 @@ input[type="range"] { width: 150px; accent-color: var(--accent); }
 .note:empty { display: none; }
 .note::before { content: "ⓘ "; color: var(--accent); }
 
+/* ---------- v3.1: España, retorno, SPI ---------- */
+.rec-tile.t-wind { --c: var(--dtr); }
+
+.seg-lg { margin-bottom: 0.9rem; flex-wrap: wrap; }
+.seg-lg button { font-size: 0.88rem; padding: 0.4rem 1rem; }
+.panel-head .seg-switch { margin-top: 0.7rem; }
+
+.plot-map { height: 680px; }
+.split-even { grid-template-columns: 1fr 1fr; }
+.split-even .table-wrap { max-height: none; }
+.data-table tbody tr.hl td { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+
+.answer {
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.9rem;
+  margin: 0.8rem 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+.answer:empty { display: none; }
+.answer b { color: var(--accent); }
+
+#na-play { width: 2.2rem; height: 2.2rem; padding: 0; flex: none; }
+
 /* ---------- carga ---------- */
 .loader {
   position: fixed;
@@ -722,6 +747,8 @@ input[type="range"] { width: 150px; accent-color: var(--accent); }
   .split { grid-template-columns: 1fr; }
   .plot { height: 380px; }
   .plot-tall { height: 460px; }
+  .plot-map { height: 480px; }
+  .split-even { grid-template-columns: 1fr; }
   .panel { padding: 1rem; }
   .panel-head { padding-right: 0; }
   .btn-export { position: static; margin-bottom: 0.8rem; }

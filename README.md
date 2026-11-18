@@ -8,16 +8,18 @@ de AEMET. Todo el cálculo ocurre en el navegador; no hay backend.
 Al elegir una estación aparece su ficha con **récords en tarjetas**, en tres
 ámbitos (Hoy / Este mes / Siempre): máxima más alta y más baja, mínima más alta
 y más baja, más lluvia en un día y, para el mes y el año, el más lluvioso y el
-más seco. También indica en qué percentil de lo normal cae el último dato de Tmax.
+más seco, además de la racha de viento más fuerte. También indica en qué
+percentil de lo normal cae el último dato de Tmax.
 
-Los 13 análisis se agrupan en cuatro bloques:
+Los análisis se agrupan en cinco bloques:
 
 | Bloque | Análisis |
 |---|---|
-| Este año | Año en curso (frente a P5–P95 y récords previos) · Calendario de anomalías · Comparar períodos |
-| Tendencias | Evolución anual · Warming stripes · Índices climáticos (noches tropicales, heladas, primer 30/35/40 °C, duración del verano…) · Récords por década |
-| Extremos | Rachas (condición diaria o período seco) · Olas de calor y de frío · Distribución (histograma/ECDF) |
-| Comparar | Comparador de años · Dos estaciones · España (anomalía de toda la red) |
+| Este año | Año en curso (frente a P5–P95 y récords previos) · Calendario de anomalías |
+| Tendencias | Evolución anual · Warming stripes (temperatura, precipitación u horas de sol) · Índices climáticos (noches tropicales, heladas, primer 30/35/40 °C, duración del verano…) · Récords por década |
+| Extremos | Rachas (condición diaria o período seco) · Olas de calor y de frío · Períodos de retorno (GEV por L-momentos, comparando dos épocas) · Sequía (SPI de 1 a 24 meses, con calendario) |
+| Comparar | Comparador de años · Comparar períodos (día a día o distribución) · Dos estaciones |
+| Toda España | Evolución (red fija o variable, promedio por área o por estación, año/estación/mes) con reparto de estaciones por encima y por debajo de lo normal y clasificación de años · Mapa de anomalías año a año (con reproducción) o de tendencias · Regiones y franjas de altitud · Récords absolutos batidos en la red frente a lo esperado con un clima estable |
 
 - **Período normal** global configurable en la barra superior (1991–2020 por defecto).
 - Los gráficos se **recalculan solos** al cambiar cualquier control.
@@ -34,11 +36,15 @@ Los 13 análisis se agrupan en cuatro bloques:
   del tema (`refreshTheme()` en `app.js`).
 - `scripts/build_data.py` — convierte los CSV diarios de AEMET OpenData a un JSON
   columnar por estación (`data/stations/{id}.json`) y al catálogo (`data/index.json`).
-- `scripts/build_national.py` — medias anuales por estación → `data/national.json`
-  (pestaña España).
+- `scripts/build_national.py` — agregados por estación para la pestaña España:
+  medias/totales y extremos anuales → `data/national.json`; medias/totales
+  mensuales → `data/national_monthly.json` (se carga solo al elegir una
+  estación del año o un mes).
 - `scripts/build_coords.py` — coordenadas de las estaciones → `data/coords.json`.
-- `scripts/update_recent.py` — últimos 60 días de todas las estaciones →
+- `scripts/update_recent.py` — últimos 120 días de todas las estaciones →
   `data/recent.json`; la web lo fusiona con el histórico (lo reciente manda).
+  Los días que la API no devuelve se rellenan con el fichero previo, y si la
+  API está caída el fichero se conserva sin dar error.
 - `.github/workflows/update.yml` — ejecuta `update_recent.py` cada día a las
   06:00 UTC (secreto `AEMET_API_KEY`) y amenda su propio commit para no engordar
   el historial.
@@ -48,7 +54,7 @@ Los 13 análisis se agrupan en cuatro bloques:
 
 ```bash
 python scripts/build_data.py --input-dir /ruta/a/csvs --output-dir data --workers 8
-python scripts/build_national.py --data-dir data --output data/national.json
+python scripts/build_national.py --data-dir data
 export AEMET_API_KEY="tu_api_key"
 python scripts/build_coords.py --output data/coords.json
 python scripts/update_recent.py --index data/index.json --output data/recent.json

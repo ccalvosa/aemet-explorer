@@ -342,6 +342,8 @@ function showLoader(txt) { $("loader-txt").textContent = txt; $("loader").hidden
 function hideLoader() { $("loader").hidden = true; }
 
 function currentTab() {
+  const p = document.querySelector(".panel:not([hidden])");
+  if (p) return p.id.replace("panel-", "");
   const a = document.querySelector(".tab.active");
   return a ? a.dataset.tab : "anio";
 }
@@ -451,7 +453,7 @@ function computeRecords(S) {
   const now = new Date();
   const cm = now.getMonth() + 1;
   const todayMd = cm * 100 + now.getDate();
-  const mk = () => ({ txM: null, txm: null, tnM: null, tnm: null, pM: null });
+  const mk = () => ({ txM: null, txm: null, tnM: null, tnm: null, pM: null, gM: null });
   const day = mk(), mon = mk(), abs = mk();
   const upd = (slot, val, hi, i) => {
     if (val === null || val === undefined) return slot;
@@ -464,6 +466,7 @@ function computeRecords(S) {
     R.tnM = upd(R.tnM, D.tmin[i], true, i);
     R.tnm = upd(R.tnm, D.tmin[i], false, i);
     if (D.prec) R.pM = upd(R.pM, D.prec[i], true, i);
+    if (D.racha) R.gM = upd(R.gM, D.racha[i], true, i);
   };
   const yearTot = new Map(), monthTot = new Map();
   for (let i = 0; i < D.tmax.length; i++) {
@@ -530,6 +533,7 @@ function renderEphemeris() {
   if (set.tnM) tile("t-tmin", "Mínima más alta", nf1(set.tnM.v), "°C", when(set.tnM));
   if (set.tnm) tile("t-tmin", "Mínima más baja", nf1(set.tnm.v), "°C", when(set.tnm));
   if (set.pM && set.pM.v > 0) tile("t-prec", "Más lluvia en un día", nf1(set.pM.v), " mm", when(set.pM));
+  if (set.gM && set.gM.v > 0) tile("t-wind", "Racha más fuerte", Math.round(set.gM.v * 3.6), " km/h", `${nf1(set.gM.v)} m/s · ${when(set.gM)}`);
   if (scope === "mes") {
     if (R.wetMonth) tile("t-prec", `${cap(MESES_LARGO[R.cm])} más lluvioso`, nf1(R.wetMonth.sum), " mm", `en ${R.wetMonth.yr}`);
     if (R.dryMonth) tile("t-prec", `${cap(MESES_LARGO[R.cm])} más seco`, nf1(R.dryMonth.sum), " mm", `en ${R.dryMonth.yr}`);
@@ -610,7 +614,9 @@ function runPanel(name) {
 
 function activateTab(name) {
   if (!state.station && name !== "nacional") return;
-  document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  stopNatPlay();
+  const navName = name === "distribucion" ? "periodos" : name;
+  document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === navName));
   document.querySelectorAll(".panel").forEach((p) => { p.hidden = true; });
   $(`panel-${name}`).hidden = false;
   updateHash();
@@ -843,6 +849,7 @@ function runStripes() {
   const S = state.station;
   const v = $("st-var").value;
   const isPrec = v === "prec";
+  const u = VAR_UNITS[v];
   const mdS = parseMd($("st-md-start").value);
   const mdE = parseMd($("st-md-end").value);
   if (mdS === null || mdE === null) { $("st-note").textContent = "Ventana no válida."; return; }
@@ -869,7 +876,8 @@ function runStripes() {
   const yrs = [...vals.keys()].sort((a, b) => a - b);
   const y0 = yrs[0], y1 = yrs[yrs.length - 1];
   const center = isPrec ? 100 : 0;
-  const cscale = isPrec ? [[0,"#8c510a"],[0.25,"#d8b365"],[0.5,"#f6e8c3"],[0.75,"#5ab4ac"],[1,"#01665e"]] : "RdBu";
+  const cscale = isPrec ? [[0,"#8c510a"],[0.25,"#d8b365"],[0.5,"#f6e8c3"],[0.75,"#5ab4ac"],[1,"#01665e"]]
+    : v === "sol" ? [[0,"#3b4a7a"],[0.5,"#f1f1ee"],[1,"#f59f00"]] : "RdBu";
   const allYears = [], anoms = [];
   for (let y = y0; y <= y1; y++) {
     allYears.push(y);
@@ -889,13 +897,13 @@ function runStripes() {
     colorscale: cscale, reversescale: false,
     zmin: center - amax, zmax: center + amax, showscale: false,
     hovertemplate: isPrec ? "%{x}: %{z:.0f}% de la normal<extra></extra>"
-                          : "%{x}: %{z:+.2f} °C<extra></extra>",
+                          : `%{x}: %{z:+.2f} ${u}<extra></extra>`,
   }], l1, PLOTLY_CFG);
 
   // ---- barras de anomalía + tendencia + media móvil ----
   const l2 = baseLayout("");
   l2.margin.t = 10;
-  l2.yaxis.title = { text: isPrec ? "% de la normal" : "anomalía (°C)" };
+  l2.yaxis.title = { text: isPrec ? "% de la normal" : `anomalía (${u})` };
   l2.legend = { orientation: "h", y: -0.18 };
   if (isPrec) l2.shapes = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 100, y1: 100,
     line: { color: TH.muted, dash: "dash", width: 1 } }];
@@ -903,7 +911,7 @@ function runStripes() {
     x: allYears, y: anoms, type: "bar", name: "anomalía", showlegend: false,
     marker: { color: anoms, colorscale: cscale, reversescale: false,
               cmin: center - amax, cmax: center + amax },
-    hovertemplate: isPrec ? "%{x}: %{y:.0f}%<extra></extra>" : "%{x}: %{y:+.2f} °C<extra></extra>",
+    hovertemplate: isPrec ? "%{x}: %{y:.0f}%<extra></extra>" : `%{x}: %{y:+.2f} ${u}<extra></extra>`,
   }];
 
   const vx = [], vy = [];
@@ -920,7 +928,7 @@ function runStripes() {
         line: { color: TH.fg, width: 2, dash: "dot" }, hoverinfo: "skip",
       });
       trendTxt = ` Tendencia: ${(fit.b * 10 >= 0 ? "+" : "")}${(fit.b * 10).toFixed(2)} ` +
-        `${isPrec ? "puntos%" : "°C"}/década (OLS, orientativa).`;
+        `${isPrec ? "puntos%" : u}/década (OLS, orientativa).`;
     }
   }
 
@@ -938,7 +946,7 @@ function runStripes() {
       x: mx, y: my, mode: "lines", name: `media móvil ${win}a`,
       line: { color: VAR_COLORS.tmed, width: 2.5 },
       hovertemplate: isPrec ? "%{x}: %{y:.0f}%<extra>móvil " + win + "a</extra>"
-                            : "%{x}: %{y:+.2f} °C<extra>móvil " + win + "a</extra>",
+                            : `%{x}: %{y:+.2f} ${u}<extra>móvil ${win}a</extra>`,
     });
     maTxt = ` Media móvil de ${win} años.`;
   }
@@ -949,7 +957,7 @@ function runStripes() {
   $("st-note").textContent =
     (isPrec
       ? `Normal ${refA}–${refB}: ${refMean.toFixed(0)} mm en la ventana (100% = normal). `
-      : `Media de referencia ${refA}–${refB}: ${refMean.toFixed(2)} °C. `) +
+      : `Media de referencia ${refA}–${refB}: ${refMean.toFixed(2)} ${u}${v === "sol" ? " al día" : ""}. `) +
     `Años en blanco: sin cobertura suficiente.` + trendTxt + maTxt;
 }
 // ==========================================================
@@ -1817,8 +1825,25 @@ function runPeriodos() {
 }
 
 // ==========================================================
-// PRODUCTO: Nacional (todas las estaciones, medias anuales precomputadas)
+// PRODUCTO: España (toda la red; agregados precomputados)
 // ==========================================================
+
+const REGIONS = {
+  "Norte atlántico y cantábrico": ["A CORUÑA", "LUGO", "OURENSE", "PONTEVEDRA", "ASTURIAS", "CANTABRIA", "BIZKAIA", "GIPUZKOA"],
+  "Meseta norte y valle del Ebro": ["LEON", "ZAMORA", "SALAMANCA", "VALLADOLID", "PALENCIA", "BURGOS", "SORIA", "SEGOVIA",
+    "AVILA", "ARABA/ALAVA", "LA RIOJA", "NAVARRA", "HUESCA", "ZARAGOZA", "TERUEL", "LLEIDA"],
+  "Meseta sur y Extremadura": ["MADRID", "GUADALAJARA", "CUENCA", "TOLEDO", "CIUDAD REAL", "ALBACETE", "CACERES", "BADAJOZ"],
+  "Mediterráneo y Baleares": ["GIRONA", "BARCELONA", "TARRAGONA", "CASTELLON", "VALENCIA", "ALICANTE", "MURCIA", "BALEARES", "ILLES BALEARS"],
+  "Andalucía, Ceuta y Melilla": ["HUELVA", "SEVILLA", "CADIZ", "CORDOBA", "JAEN", "GRANADA", "MALAGA", "ALMERIA", "CEUTA", "MELILLA"],
+  "Canarias": ["LAS PALMAS", "SANTA CRUZ DE TENERIFE", "STA. CRUZ DE TENERIFE"],
+};
+const PROV_REGION = new Map(Object.entries(REGIONS).flatMap(([r, ps]) => ps.map((p) => [p, r])));
+const ALT_BANDS = [[-Infinity, 200, "Menos de 200 m"], [200, 600, "200–600 m"], [600, 1000, "600–1000 m"], [1000, Infinity, "Más de 1000 m"]];
+const GROUP_COLORS = ["#1c7ed6", "#2b8a3e", "#e8590c", "#ae3ec9", "#f08c00", "#0c8599"];
+const SEASON_MONTHS = { DJF: [12, 1, 2], MAM: [3, 4, 5], JJA: [6, 7, 8], SON: [9, 10, 11] };
+const PER_LABEL = { anio: "año completo", DJF: "invierno", MAM: "primavera", JJA: "verano", SON: "otoño" };
+const DIV_TEMP = [[0, "#2166ac"], [0.25, "#67a9cf"], [0.5, "#f4f1ea"], [0.75, "#ef8a62"], [1, "#b2182b"]];
+const DIV_PREC = [[0, "#8c510a"], [0.25, "#d8b365"], [0.5, "#f4f1ea"], [0.75, "#5ab4ac"], [1, "#01665e"]];
 
 async function loadNational() {
   if (state.nationalTried) return;
@@ -1827,97 +1852,875 @@ async function loadNational() {
     const r = await fetch(`${DATA_URL}/national.json`);
     if (r.ok) state.national = await r.json();
   } catch { /* sin national.json */ }
+  try {
+    const r = await fetch(`${DATA_URL}/coords.json`);
+    if (r.ok) state.coords = await r.json();
+  } catch { state.coords = {}; }
+  state.coords = state.coords || {};
+  state.stMeta = new Map(state.index.stations.map((s) => [s.id, s]));
+}
+
+async function loadNationalMonthly() {
+  if (state.nationalM !== undefined) return;
+  showLoader("Cargando datos mensuales de toda la red…");
+  try {
+    const r = await fetch(`${DATA_URL}/national_monthly.json`);
+    state.nationalM = r.ok ? await r.json() : null;
+  } catch { state.nationalM = null; }
+  hideLoader();
+}
+
+function perLabel(per) {
+  return per.startsWith("m") ? MESES_LARGO[+per.slice(1)] : PER_LABEL[per];
+}
+
+/** Map id → array (alineado a N.y0..N.y1) de la variable en el período del año pedido. */
+async function natSeries(v, per) {
+  const N = state.national;
+  state.natCache = state.natCache || new Map();
+  const key = `${v}|${per}`;
+  if (state.natCache.has(key)) return state.natCache.get(key);
+  const out = new Map();
+  if (per === "anio") {
+    for (const id in N.stations) if (N.stations[id][v]) out.set(id, N.stations[id][v]);
+  } else {
+    await loadNationalMonthly();
+    const M = state.nationalM;
+    if (!M) return null;
+    const months = per.startsWith("m") ? [+per.slice(1)] : SEASON_MONTHS[per];
+    const ny = N.y1 - N.y0 + 1;
+    for (const id in M.stations) {
+      const s = M.stations[id], arr = s[v];
+      if (!arr) continue;
+      const res = new Array(ny).fill(null);
+      let any = false;
+      for (let k = 0; k < ny; k++) {
+        const y = N.y0 + k;
+        let sum = 0, ok = true;
+        for (const m of months) {
+          const yy = per === "DJF" && m === 12 ? y - 1 : y;
+          const t = (yy - s.y0) * 12 + (m - 1);
+          const x = t >= 0 && t < arr.length ? arr[t] : null;
+          if (x === null) { ok = false; break; }
+          sum += x;
+        }
+        if (ok) { res[k] = v === "prec" ? Math.round(sum * 10) / 10 : sum / months.length; any = true; }
+      }
+      if (any) out.set(id, res);
+    }
+  }
+  state.natCache.set(key, out);
+  return out;
+}
+
+/** Anomalías por estación frente a su propia base de referencia, con filtro de red fija. */
+function natAnoms(series, v, red) {
+  const N = state.national;
+  const isPrec = v === "prec";
+  const [refA, refB] = getRef();
+  const ny = N.y1 - N.y0 + 1;
+  const counts = new Array(ny).fill(0);
+  for (const arr of series.values()) arr.forEach((x, k) => { if (x !== null) counts[k]++; });
+  const cmax = Math.max(...counts);
+  let kEnd = ny - 1;
+  while (kEnd > 0 && counts[kEnd] < 0.5 * cmax) kEnd--;
+  const yEnd = N.y0 + kEnd;
+  const yStart = red === "todas" ? N.y0 : +red;
+  const stations = [];
+  for (const [id, arr] of series) {
+    let bSum = 0, bN = 0;
+    for (let y = Math.max(refA, N.y0); y <= Math.min(refB, N.y1); y++) {
+      const x = arr[y - N.y0];
+      if (x !== null) { bSum += x; bN++; }
+    }
+    if (bN < 0.8 * (refB - refA + 1)) continue;
+    const base = bSum / bN;
+    if (isPrec && base <= 0) continue;
+    if (red !== "todas") {
+      let nv = 0;
+      for (let y = yStart; y <= yEnd; y++) if (arr[y - N.y0] !== null) nv++;
+      if (nv < 0.8 * (yEnd - yStart + 1)) continue;
+    }
+    const anom = arr.map((x) => (x === null ? null : isPrec ? (100 * x) / base : x - base));
+    const meta = state.stMeta.get(id) || {};
+    const c = state.coords[id];
+    stations.push({ id, anom, base, name: meta.name || id, prov: meta.province || "",
+                    alt: meta.altitude ?? null, lat: c ? c[0] : null, lon: c ? c[1] : null });
+  }
+  return { stations, yStart, yEnd, isPrec };
+}
+
+/** Media de la red año a año (por estación o por celdas de 1°) y reparto por encima/debajo de lo normal. */
+function natAverage(stations, area, isPrec) {
+  const N = state.national;
+  const ny = N.y1 - N.y0 + 1;
+  const mean = new Array(ny).fill(null), nSt = new Array(ny).fill(0);
+  const above = new Array(ny).fill(0), below = new Array(ny).fill(0);
+  const center = isPrec ? 100 : 0;
+  for (let k = 0; k < ny; k++) {
+    const cells = new Map();
+    let s = 0, n = 0;
+    for (const st of stations) {
+      const a = st.anom[k];
+      if (a === null) continue;
+      n++;
+      if (a > center) above[k]++; else below[k]++;
+      if (area) {
+        if (st.lat === null) continue;
+        const key = `${Math.floor(st.lat)},${Math.floor(st.lon)}`;
+        const c = cells.get(key) || { s: 0, n: 0 };
+        c.s += a; c.n++; cells.set(key, c);
+      } else { s += a; }
+    }
+    nSt[k] = n;
+    if (!n) continue;
+    if (area) {
+      let cs = 0;
+      for (const c of cells.values()) cs += c.s / c.n;
+      mean[k] = cells.size ? cs / cells.size : null;
+    } else mean[k] = s / n;
+  }
+  return { mean, nSt, above, below };
+}
+
+function runningMean(ys, win) {
+  const h = Math.floor(win / 2);
+  return ys.map((_, i) => {
+    let s = 0, n = 0;
+    for (let j = i - h; j <= i + h; j++) if (j >= 0 && j < ys.length && ys[j] !== null) { s += ys[j]; n++; }
+    return n >= Math.ceil(win * 0.7) ? s / n : null;
+  });
+}
+
+function stopNatPlay() {
+  if (state.natPlay) { clearInterval(state.natPlay); state.natPlay = null; }
+  const b = $("na-play");
+  if (b) b.textContent = "▶";
 }
 
 async function runNacional() {
   await loadNational();
   const N = state.national;
   if (!N) {
-    $("na-note").textContent =
-      "Falta data/national.json: genéralo con scripts/build_national.py y súbelo al repo.";
+    $("na-note").textContent = "Falta data/national.json: genéralo con scripts/build_national.py y súbelo al repo.";
     return;
   }
+  const view = state.natView || "evol";
+  document.querySelectorAll("#panel-nacional [data-views]").forEach((el) => {
+    el.hidden = !el.dataset.views.split(" ").includes(view);
+  });
+  document.querySelectorAll("#panel-nacional .na-sub").forEach((el) => { el.hidden = el.dataset.view !== view; });
+  if (view === "recs") { runNatRecords(); return; }
+
   const v = $("na-var").value;
-  const isPrec = v === "prec";
-  const minSt = +$("na-min").value;
-  const [refA, refB] = getRef();
-  const nRefYears = refB - refA + 1;
-  const years = [];
-  for (let y = N.y0; y <= N.y1; y++) years.push(y);
-  const iOf = (y) => y - N.y0;
-
-  const sums = new Array(years.length).fill(0);
-  const counts = new Array(years.length).fill(0);
-  let usable = 0;
-  for (const id in N.stations) {
-    const arr = N.stations[id][v];
-    if (!arr) continue;
-    // base propia de la estación en el período de referencia
-    let bSum = 0, bN = 0;
-    for (let y = Math.max(refA, N.y0); y <= Math.min(refB, N.y1); y++) {
-      const x = arr[iOf(y)];
-      if (x !== null) { bSum += x; bN++; }
-    }
-    if (bN < 0.8 * nRefYears) continue;
-    const base = bSum / bN;
-    if (isPrec && base <= 0) continue;
-    usable++;
-    for (let k = 0; k < years.length; k++) {
-      const x = arr[k];
-      if (x === null) continue;
-      sums[k] += isPrec ? (100 * x) / base : x - base;
-      counts[k]++;
-    }
+  const per = $("na-per").value;
+  const series = await natSeries(v, per);
+  if (!series) { $("na-note").textContent = "No se pudo cargar data/national_monthly.json."; return; }
+  const A = natAnoms(series, v, $("na-red").value);
+  state.natLast = { A, v, per };
+  if (A.stations.length < 10) {
+    $("na-note").textContent = `Solo ${A.stations.length} estaciones cumplen los requisitos. Prueba con «Todas las disponibles» o cambia el período normal.`;
+    return;
   }
+  if (view === "evol") runNatEvol(A, v, per);
+  else if (view === "mapa") runNatMap();
+  else runNatRegions(A, v, per);
+}
 
-  const xs = [], ys = [], ns = [];
-  for (let k = 0; k < years.length; k++) {
-    if (counts[k] >= minSt) { xs.push(years[k]); ys.push(sums[k] / counts[k]); ns.push(counts[k]); }
+function natSubtitle(A, per, area) {
+  const [refA, refB] = getRef();
+  return `${cap(perLabel(per))} · ${A.isPrec ? `% de la normal ${refA}–${refB}` : `anomalía vs ${refA}–${refB}`} · ` +
+    `${A.stations.length} estaciones${area ? ", promedio por área" : ""}`;
+}
+
+function runNatEvol(A, v, per) {
+  const N = state.national;
+  const area = $("na-peso").value === "area";
+  const minSt = +$("na-min").value;
+  const trendFrom = +$("na-trend").value;
+  const avg = natAverage(A.stations, area, A.isPrec);
+  const xs = [], ys = [], ns = [], up = [], dn = [];
+  for (let y = A.yStart; y <= A.yEnd; y++) {
+    const k = y - N.y0;
+    if (avg.mean[k] === null || avg.nSt[k] < minSt) continue;
+    xs.push(y); ys.push(avg.mean[k]); ns.push(avg.nSt[k]);
+    up.push((100 * avg.above[k]) / avg.nSt[k]); dn.push((-100 * avg.below[k]) / avg.nSt[k]);
   }
   if (xs.length < 5) {
-    $("na-note").textContent =
-      `Solo ${xs.length} años con ≥ ${minSt} estaciones válidas. Baja el mínimo o amplía la referencia.`;
-    Plotly.purge("plot-nacional"); return;
+    $("na-note").textContent = `Solo ${xs.length} años con ≥ ${minSt} estaciones. Baja el mínimo o elige «Todas las disponibles».`;
+    return;
   }
-
-  const amax = Math.max(...ys.map((y) => Math.abs(isPrec ? y - 100 : y)));
-  const layout = baseLayout(
-    `España (media de ${usable} estaciones con base propia) · ${VAR_LABELS[v]} ` +
-    (isPrec ? `· % de la normal ${refA}–${refB}` : `· anomalía vs ${refA}–${refB}`));
+  const isPrec = A.isPrec, center = isPrec ? 100 : 0;
+  const unit = isPrec ? "%" : "°C";
+  const amax = Math.max(...ys.map((y) => Math.abs(y - center))) || 1;
+  const layout = baseLayout(`España · ${VAR_LABELS[v]} · ${natSubtitle(A, per, area)}`);
   layout.yaxis.title = { text: isPrec ? "% de la normal" : "anomalía (°C)" };
-  layout.yaxis2 = { overlaying: "y", side: "right", title: { text: "estaciones" },
-                    gridcolor: "rgba(0,0,0,0)", rangemode: "tozero" };
-  layout.legend = { orientation: "h", y: -0.12 };
-  if (isPrec) layout.shapes = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 100, y1: 100,
-    line: { color: TH.muted, dash: "dash", width: 1 } }];
+  layout.yaxis2 = { overlaying: "y", side: "right", title: { text: "estaciones" }, showgrid: false, rangemode: "tozero" };
+  layout.legend = { orientation: "h", y: -0.14 };
+  layout.shapes = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: center, y1: center, line: { color: TH.muted, width: 1 } }];
   const traces = [
-    { x: xs, y: ys, type: "bar", name: isPrec ? "% normal" : "anomalía",
-      marker: { color: ys.map((y) => isPrec ? y - 100 : y),
-                colorscale: isPrec ? [[0,"#8c510a"],[0.25,"#d8b365"],[0.5,"#f6e8c3"],[0.75,"#5ab4ac"],[1,"#01665e"]] : "RdBu",
-                reversescale: false,
-                cmin: -amax, cmax: amax },
-      hovertemplate: "%{x}: %{y:.1f}<extra></extra>" },
-    { x: xs, y: ns, yaxis: "y2", mode: "lines", name: "nº estaciones",
-      line: { color: TH.muted, width: 1 }, hovertemplate: "%{x}: %{y} est.<extra></extra>" },
+    { x: xs, y: ys, type: "bar", name: isPrec ? "% de la normal" : "anomalía",
+      marker: { color: ys.map((y) => y - center), colorscale: isPrec ? DIV_PREC : DIV_TEMP, cmin: -amax, cmax: amax },
+      customdata: ns, hovertemplate: `%{x}: %{y:${isPrec ? ".0f" : "+.2f"}} ${unit}<br>%{customdata} estaciones<extra></extra>` },
+    { x: xs, y: runningMean(ys, 11), mode: "lines", name: "media móvil 11 años",
+      line: { color: TH.fg, width: 2.5 }, hoverinfo: "skip" },
+    { x: xs, y: ns, yaxis: "y2", mode: "lines", name: "nº de estaciones",
+      line: { color: TH.muted, width: 1, dash: "dot" }, hovertemplate: "%{x}: %{y} estaciones<extra></extra>" },
   ];
   let trendTxt = "";
-  if (!isPrec) {
-    const fit = ols(xs, ys);
-    if (fit) {
-      traces.push({ x: [xs[0], xs[xs.length - 1]],
-        y: [fit.a + fit.b * xs[0], fit.a + fit.b * xs[xs.length - 1]],
-        mode: "lines", line: { color: TH.fg, width: 1.5, dash: "dot" },
-        hoverinfo: "skip", showlegend: false });
-      trendTxt = ` Tendencia: ${(fit.b * 10 >= 0 ? "+" : "")}${(fit.b * 10).toFixed(2)} °C/década (OLS, orientativa).`;
-    }
+  const tx = [], ty = [];
+  xs.forEach((x, i) => { if (x >= trendFrom) { tx.push(x); ty.push(ys[i]); } });
+  const fit = ols(tx, ty);
+  if (fit) {
+    traces.push({ x: [tx[0], tx[tx.length - 1]], y: [fit.a + fit.b * tx[0], fit.a + fit.b * tx[tx.length - 1]],
+      mode: "lines", name: `tendencia desde ${trendFrom}`, line: { color: ACCENT, width: 2, dash: "dash" }, hoverinfo: "skip" });
+    trendTxt = ` Tendencia desde ${trendFrom}: ${fit.b >= 0 ? "+" : ""}${(fit.b * 10).toFixed(isPrec ? 1 : 2)} ${isPrec ? "puntos %" : "°C"} por década (OLS, orientativa).`;
   }
   Plotly.newPlot("plot-nacional", traces, layout, PLOTLY_CFG);
 
+  // ---- consenso de la red ----
+  const lc = baseLayout("");
+  lc.margin.t = 10;
+  lc.barmode = "relative";
+  lc.yaxis.title = { text: "% de estaciones" };
+  lc.yaxis.range = [-100, 100];
+  lc.yaxis.tickvals = [-100, -50, 0, 50, 100];
+  lc.yaxis.ticktext = ["100", "50", "0", "50", "100"];
+  lc.legend = { orientation: "h", y: -0.18 };
+  const hiName = isPrec ? "más lluviosas de lo normal" : "más cálidas de lo normal";
+  const loName = isPrec ? "más secas de lo normal" : "más frías de lo normal";
+  Plotly.newPlot("plot-nacional-cons", [
+    { x: xs, y: up, type: "bar", name: hiName, marker: { color: isPrec ? "#5ab4ac" : VAR_COLORS.tmax },
+      hovertemplate: `%{x}: %{y:.0f}% ${hiName}<extra></extra>` },
+    { x: xs, y: dn, type: "bar", name: loName, marker: { color: isPrec ? "#d8b365" : VAR_COLORS.tmin },
+      customdata: dn.map((d) => -d), hovertemplate: `%{x}: %{customdata:.0f}% ${loName}<extra></extra>` },
+  ], lc, PLOTLY_CFG);
+
+  // ---- clasificación ----
+  const rows = xs.map((x, i) => ({ y: x, v: ys[i] })).sort((a, b) => b.v - a.v);
+  const fmt = (r) => isPrec ? `${r.v.toFixed(0)} %` : `${r.v >= 0 ? "+" : ""}${r.v.toFixed(2)} °C`;
+  const last = xs[xs.length - 1];
+  function fill(id, title, list) {
+    const t = $(id);
+    t.querySelector("thead").innerHTML = `<tr><th>#</th><th>${title}</th><th>${isPrec ? "% normal" : "Anomalía"}</th></tr>`;
+    t.querySelector("tbody").innerHTML = list.map((r, i) =>
+      `<tr${r.y === last ? ' class="hl"' : ""}><td>${i + 1}</td><td>${r.y}</td><td>${fmt(r)}</td></tr>`).join("");
+  }
+  fill("na-rank-hi", isPrec ? "Más lluviosos" : "Más cálidos", rows.slice(0, 10));
+  fill("na-rank-lo", isPrec ? "Más secos" : "Más fríos", rows.slice(-10).reverse());
+  const pos = rows.findIndex((r) => r.y === last) + 1;
+  const hiWord = isPrec ? "más lluvioso" : "más cálido";
+
   $("na-note").textContent =
-    `Anomalía de cada estación respecto a su propia base ${refA}–${refB} (exige ≥80% de esos años), ` +
-    `promediada sobre las disponibles cada año.${trendTxt} ` +
-    `Red no homogeneizada: los primeros años, con pocas estaciones, son menos representativos. ` +
-    `Llega hasta el último año consolidado del build (la ventana diaria reciente no entra aquí).`;
+    `${last} es el ${pos}º ${hiWord} de ${rows.length} años con datos (desde ${xs[0]}).` + trendTxt +
+    (A.yStart > N.y0 ? ` Red fija: solo estaciones con ≥ 80 % de años válidos entre ${A.yStart} y ${A.yEnd}, para que la composición de la red no cree tendencias falsas.` : " Red variable: las estaciones entran y salen; los primeros años son poco representativos.") +
+    (area ? " Promedio por área: primero se promedian las estaciones de cada celda de 1° y luego las celdas, para que las zonas con muchas estaciones no pesen más." : "") +
+    " Series no homogeneizadas.";
+}
+
+function runNatMap() {
+  const L = state.natLast;
+  if (!L) return;
+  const { A, v, per } = L;
+  const N = state.national;
+  const mode = $("na-map-mode").value;
+  const isPrec = A.isPrec;
+  const slider = $("na-map-year");
+  slider.min = A.yStart; slider.max = A.yEnd;
+  if (!state.natYearTouched) slider.value = A.yEnd;
+  if (+slider.value > A.yEnd) slider.value = A.yEnd;
+  if (+slider.value < A.yStart) slider.value = A.yStart;
+  const year = +slider.value;
+  $("na-map-year-val").textContent = year;
+  $("na-year-wrap").hidden = mode !== "anom";
+
+  const pts = [];
+  let title, cmin, cmax, unit, fmtv;
+  if (mode === "anom") {
+    const k = year - N.y0;
+    for (const st of A.stations) if (st.lat !== null && st.anom[k] !== null) pts.push({ st, z: st.anom[k] });
+    const [refA, refB] = getRef();
+    title = `${cap(perLabel(per))} de ${year} · ${VAR_LABELS[v]} · ${isPrec ? `% de la normal ${refA}–${refB}` : `anomalía vs ${refA}–${refB}`}`;
+    unit = isPrec ? "%" : "°C";
+    fmtv = isPrec ? ".0f" : "+.1f";
+    if (isPrec) { cmin = 0; cmax = 200; } else { cmin = -3; cmax = 3; }
+  } else {
+    const from = +$("na-trend").value;
+    for (const st of A.stations) {
+      if (st.lat === null) continue;
+      const xs = [], ys = [];
+      for (let y = from; y <= A.yEnd; y++) { const a = st.anom[y - N.y0]; if (a !== null) { xs.push(y); ys.push(a); } }
+      if (xs.length < 0.8 * (A.yEnd - from + 1)) continue;
+      const fit = ols(xs, ys);
+      if (fit) pts.push({ st, z: fit.b * 10 });
+    }
+    title = `Tendencia ${from}–${A.yEnd} · ${VAR_LABELS[v]} · ${cap(perLabel(per))} · ${isPrec ? "puntos % por década" : "°C por década"}`;
+    unit = isPrec ? "puntos %/década" : "°C/década";
+    fmtv = isPrec ? "+.1f" : "+.2f";
+    if (isPrec) { cmin = -10; cmax = 10; } else { cmin = -0.6; cmax = 0.6; }
+  }
+  if (!pts.length) {
+    $("na-note").textContent = mode === "anom" ? `Sin estaciones con dato en ${year}.` : "Ninguna estación tiene serie suficiente para la tendencia.";
+    Plotly.purge("plot-nacional-mapa");
+    return;
+  }
+  const canary = (p) => p.st.lat < 30;
+  const mk = (list, geo, showscale) => ({
+    type: "scattergeo", geo, lat: list.map((p) => p.st.lat), lon: list.map((p) => p.st.lon),
+    text: list.map((p) => `${p.st.name} (${cap(p.st.prov.toLowerCase())})`),
+    customdata: list.map((p) => p.z),
+    hovertemplate: `%{text}<br>%{customdata:${fmtv}} ${unit}<extra></extra>`,
+    mode: "markers",
+    marker: { color: list.map((p) => p.z), colorscale: isPrec ? DIV_PREC : DIV_TEMP, cmin, cmax,
+              size: 9, line: { color: TH.card, width: 0.6 }, opacity: 0.95,
+              showscale, colorbar: showscale ? { title: { text: unit }, thickness: 12, len: 0.6, outlinewidth: 0 } : undefined },
+  });
+  const geoBase = {
+    projection: { type: "mercator" }, resolution: 50, showframe: false,
+    showland: true, landcolor: TH.card2, showocean: true, oceancolor: TH.card, bgcolor: TH.card,
+    showcountries: true, countrycolor: TH.border, coastlinecolor: TH.border, showlakes: false,
+  };
+  const layout = baseLayout(title);
+  layout.margin = { l: 0, r: 0, t: 44, b: 0 };
+  layout.geo = { ...geoBase, lataxis: { range: [35.2, 44.2] }, lonaxis: { range: [-10.2, 4.8] }, domain: { x: [0, 1], y: [0, 1] } };
+  layout.geo2 = { ...geoBase, lataxis: { range: [27.5, 29.6] }, lonaxis: { range: [-18.4, -13.2] },
+                  domain: { x: [0, 0.3], y: [0, 0.24] }, showframe: true, framecolor: TH.border };
+  layout.showlegend = false;
+  const traces = [mk(pts.filter((p) => !canary(p)), "geo", true), mk(pts.filter(canary), "geo2", false)];
+  Plotly.react("plot-nacional-mapa", traces, layout, PLOTLY_CFG);
+
+  const zs = pts.map((p) => p.z).sort((a, b) => a - b);
+  const pos = zs.filter((z) => z > (mode === "anom" && isPrec ? 100 : 0)).length;
+  $("na-note").textContent = `${pts.length} estaciones. ` +
+    (mode === "anom"
+      ? `${Math.round((100 * pos) / pts.length)} % por encima de lo normal; mediana ${zs[Math.floor(zs.length / 2)].toFixed(isPrec ? 0 : 1)} ${unit}. Pulsa ▶ para recorrer los años.`
+      : `${Math.round((100 * pos) / pts.length)} % con tendencia positiva; mediana ${zs[Math.floor(zs.length / 2)].toFixed(2)} ${unit}. Solo estaciones con ≥ 80 % de años desde ${$("na-trend").value}.`) +
+    " La escala de color está fija para poder comparar años.";
+}
+
+function runNatRegions(A, v, per) {
+  const N = state.national;
+  const area = $("na-peso").value === "area";
+  const byAlt = $("na-grp").value === "alt";
+  const minSt = Math.max(3, Math.round(+$("na-min").value / 10));
+  const from = +$("na-trend").value;
+  const groups = new Map();
+  for (const st of A.stations) {
+    let g;
+    if (byAlt) { if (st.alt === null) continue; g = ALT_BANDS.find(([a, b]) => st.alt >= a && st.alt < b)[2]; }
+    else g = PROV_REGION.get(st.prov) || null;
+    if (!g) continue;
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(st);
+  }
+  const order = byAlt ? ALT_BANDS.map((b) => b[2]) : Object.keys(REGIONS);
+  const traces = [], trends = [];
+  order.forEach((g, gi) => {
+    const list = groups.get(g);
+    if (!list || list.length < 3) return;
+    const avg = natAverage(list, area, A.isPrec);
+    const xs = [], ys = [];
+    for (let y = A.yStart; y <= A.yEnd; y++) {
+      const k = y - N.y0;
+      if (avg.mean[k] === null || avg.nSt[k] < minSt) continue;
+      xs.push(y); ys.push(avg.mean[k]);
+    }
+    if (xs.length < 10) return;
+    const col = GROUP_COLORS[gi % GROUP_COLORS.length];
+    traces.push({ x: xs, y: ys, mode: "markers", marker: { color: col, size: 4, opacity: 0.35 },
+                  legendgroup: g, showlegend: false, hoverinfo: "skip" });
+    traces.push({ x: xs, y: runningMean(ys, 11), mode: "lines", name: `${g} (${list.length})`, legendgroup: g,
+                  line: { color: col, width: 2.5 },
+                  hovertemplate: `%{x}: %{y:${A.isPrec ? ".0f" : "+.2f"}}<extra>${g}</extra>` });
+    const tx = [], ty = [];
+    xs.forEach((x, i) => { if (x >= from) { tx.push(x); ty.push(ys[i]); } });
+    const fit = ols(tx, ty);
+    if (fit) trends.push({ g, b: fit.b * 10, n: list.length, col });
+  });
+  const [refA, refB] = getRef();
+  const layout = baseLayout(`${VAR_LABELS[v]} · ${cap(perLabel(per))} por ${byAlt ? "altitud" : "región"} · media móvil de 11 años · ` +
+    (A.isPrec ? `% de la normal ${refA}–${refB}` : `anomalía vs ${refA}–${refB}`));
+  layout.yaxis.title = { text: A.isPrec ? "% de la normal" : "anomalía (°C)" };
+  layout.legend = { orientation: "h", y: -0.14 };
+  Plotly.newPlot("plot-nacional-reg", traces, layout, PLOTLY_CFG);
+
+  const unit = A.isPrec ? "puntos %/década" : "°C/década";
+  const l2 = baseLayout("");
+  l2.margin = { l: 210, r: 30, t: 10, b: 45 };
+  l2.xaxis.title = { text: `tendencia desde ${from} (${unit})` };
+  l2.yaxis.autorange = "reversed";
+  l2.showlegend = false;
+  Plotly.newPlot("plot-nacional-regtr", [{
+    type: "bar", orientation: "h", y: trends.map((t) => t.g), x: trends.map((t) => t.b),
+    marker: { color: trends.map((t) => t.col) },
+    text: trends.map((t) => `${t.b >= 0 ? "+" : ""}${t.b.toFixed(A.isPrec ? 1 : 2)}`), textposition: "outside",
+    customdata: trends.map((t) => t.n),
+    hovertemplate: `%{y}: %{x:+.2f} ${unit}<br>%{customdata} estaciones<extra></extra>`,
+  }], l2, PLOTLY_CFG);
+  $("na-note").textContent =
+    `Entre paréntesis, nº de estaciones de cada grupo. Cada año exige al menos ${minSt} estaciones con dato en el grupo. ` +
+    (byAlt ? "Altitud de la estación según AEMET. " : "Regiones agrupadas por provincia. ") +
+    "Los puntos tenues son los valores anuales.";
+}
+
+/** Récords absolutos batidos cada año en el conjunto de la red. */
+function runNatRecords() {
+  const N = state.national;
+  const type = $("na-rec-type").value;
+  const K = +$("na-rec-k").value;
+  const defs = {
+    calor: [{ key: "txx", hi: true, name: "Tmax más alta", color: VAR_COLORS.tmax },
+            { key: "tnn", hi: false, name: "Tmin más baja", color: VAR_COLORS.tmin }],
+    noches: [{ key: "tnx", hi: true, name: "Tmin más alta (noche más cálida)", color: VAR_COLORS.tmax },
+             { key: "txn", hi: false, name: "Tmax más baja (día más frío)", color: VAR_COLORS.tmin }],
+    lluvia: [{ key: "rx1", hi: true, name: "Lluvia máxima en 24 h", color: VAR_COLORS.prec }],
+  }[type];
+  if (!N.ext) {
+    $("na-note").textContent = "national.json no incluye extremos anuales: regenera con scripts/build_national.py.";
+    return;
+  }
+  const ny = N.y1 - N.y0 + 1;
+  const res = defs.map(() => ({ rec: new Array(ny).fill(0), elig: new Array(ny).fill(0), exp: new Array(ny).fill(0) }));
+  defs.forEach((d, di) => {
+    const R = res[di];
+    for (const id in N.stations) {
+      const arr = N.stations[id][d.key];
+      if (!arr) continue;
+      let best = null, nPrev = 0;
+      for (let k = 0; k < ny; k++) {
+        const x = arr[k];
+        if (x === null) continue;
+        if (nPrev >= K) {
+          R.elig[k]++;
+          R.exp[k] += 1 / (nPrev + 1);
+          if (d.hi ? x > best : x < best) R.rec[k]++;
+        }
+        if (best === null || (d.hi ? x > best : x < best)) best = x;
+        nPrev++;
+      }
+    }
+  });
+  const ys = [];
+  for (let k = 0; k < ny; k++) if (res[0].elig[k] >= 20) ys.push(k);
+  if (!ys.length) { $("na-note").textContent = "No hay suficientes estaciones con esa longitud de serie."; return; }
+  const years = ys.map((k) => N.y0 + k);
+  const traces = [];
+  defs.forEach((d, di) => {
+    const R = res[di], sign = di === 0 ? 1 : -1;
+    traces.push({ x: years, y: ys.map((k) => (sign * 100 * R.rec[k]) / R.elig[k]), type: "bar", name: `récords de ${d.name}`,
+      marker: { color: d.color }, customdata: ys.map((k) => [R.rec[k], R.elig[k]]),
+      hovertemplate: `%{x}: %{customdata[0]} de %{customdata[1]} estaciones<extra>${d.name}</extra>` });
+  });
+  defs.forEach((d, di) => {
+    const R = res[di], sign = di === 0 ? 1 : -1;
+    traces.push({ x: years, y: ys.map((k) => (sign * 100 * R.exp[k]) / R.elig[k]), mode: "lines",
+      name: di === 0 ? "esperado con clima estable" : undefined, showlegend: di === 0, legendgroup: "exp",
+      line: { color: TH.fg, width: 1.5, dash: "dot" }, hovertemplate: "%{x}: esperado %{y:.1f} %<extra></extra>" });
+  });
+  const layout = baseLayout(`España · % de estaciones que baten su récord absoluto cada año · series de ≥ ${K} años`);
+  layout.barmode = "relative";
+  layout.yaxis.title = { text: "% de estaciones" };
+  if (defs.length > 1) {
+    layout.yaxis.tickformat = "";
+    layout.yaxis.ticksuffix = " %";
+  }
+  layout.legend = { orientation: "h", y: -0.14 };
+  Plotly.newPlot("plot-nacional-rec", traces, layout, PLOTLY_CFG);
+
+  // ---- por décadas ----
+  const decs = [...new Set(years.map((y) => Math.floor(y / 10) * 10))];
+  const tot = defs.map((d, di) => decs.map((dc) => ys.filter((k) => Math.floor((N.y0 + k) / 10) * 10 === dc)
+    .reduce((s, k) => s + res[di].rec[k], 0)));
+  const l2 = baseLayout("");
+  l2.margin.t = 10;
+  l2.barmode = "group";
+  l2.yaxis.title = { text: "récords batidos" };
+  l2.legend = { orientation: "h", y: -0.18 };
+  if (defs.length > 1) {
+    l2.annotations = decs.map((dc, i) => ({ x: `${dc}s`, y: Math.max(tot[0][i], tot[1][i]), yshift: 12, showarrow: false,
+      text: tot[1][i] ? `${(tot[0][i] / tot[1][i]).toFixed(1)}:1` : "∞", font: { size: 11, color: TH.muted } }));
+  }
+  Plotly.newPlot("plot-nacional-recdec", defs.map((d, di) => ({
+    x: decs.map((dc) => `${dc}s`), y: tot[di], type: "bar", name: d.name, marker: { color: d.color },
+    hovertemplate: "%{x}: %{y} récords<extra>" + d.name + "</extra>",
+  })), l2, PLOTLY_CFG);
+
+  const lastK = ys[ys.length - 1];
+  const R0 = res[0];
+  $("na-note").textContent =
+    `Una estación bate su récord cuando el extremo del año supera todos los de sus años anteriores; solo cuentan estaciones con ≥ ${K} años previos válidos. ` +
+    `Con un clima estable, la probabilidad de récord en el año n+1 es 1/(n+1): es la línea punteada. ` +
+    `En ${N.y0 + lastK}, ${R0.rec[lastK]} de ${R0.elig[lastK]} estaciones batieron su récord de ${defs[0].name}. ` +
+    (defs.length > 1 ? "El ratio sobre cada década compara récords cálidos y fríos. " : "") +
+    "Años incompletos (cobertura < 90 %) no cuentan.";
+}
+
+// ==========================================================
+// Estadística: gamma, GEV (L-momentos), SPI
+// ==========================================================
+
+function lnGamma(x) {
+  // Lanczos (g=7, n=9)
+  const c = [0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313,
+             -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - lnGamma(1 - x);
+  x -= 1;
+  let a = c[0];
+  const t = x + 7.5;
+  for (let i = 1; i < 9; i++) a += c[i] / (x + i);
+  return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+}
+const gammaFn = (x) => Math.exp(lnGamma(x));
+
+/** Gamma incompleta regularizada inferior P(a, x). */
+function gammaP(a, x) {
+  if (x <= 0) return 0;
+  const gln = lnGamma(a);
+  if (x < a + 1) {
+    let ap = a, sum = 1 / a, del = sum;
+    for (let n = 0; n < 300; n++) { ap++; del *= x / ap; sum += del; if (Math.abs(del) < Math.abs(sum) * 1e-12) break; }
+    return sum * Math.exp(-x + a * Math.log(x) - gln);
+  }
+  let b = x + 1 - a, c = 1e300, d = 1 / b, h = d;
+  for (let i = 1; i < 300; i++) {
+    const an = -i * (i - a);
+    b += 2;
+    d = an * d + b; if (Math.abs(d) < 1e-300) d = 1e-300;
+    c = b + an / c; if (Math.abs(c) < 1e-300) c = 1e-300;
+    d = 1 / d;
+    const del = d * c;
+    h *= del;
+    if (Math.abs(del - 1) < 1e-12) break;
+  }
+  return 1 - Math.exp(-x + a * Math.log(x) - gln) * h;
+}
+
+/** Inversa de la normal estándar (Acklam). */
+function normInv(p) {
+  const a = [-3.969683028665376e1, 2.209460984245205e2, -2.759285104469687e2, 1.383577518672690e2, -3.066479806614716e1, 2.506628277459239];
+  const b = [-5.447609879822406e1, 1.615858368580409e2, -1.556989798598866e2, 6.680131188771972e1, -1.328068155288572e1];
+  const c = [-7.784894002430293e-3, -3.223964580411365e-1, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+  const d = [7.784695709041462e-3, 3.224671290700398e-1, 2.445134137142996, 3.754408661907416];
+  const pl = 0.02425;
+  if (p < pl) {
+    const q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+  if (p > 1 - pl) {
+    const q = Math.sqrt(-2 * Math.log(1 - p));
+    return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1);
+  }
+  const q = p - 0.5, r = q * q;
+  return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
+         (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+}
+
+/** Ajuste GEV por L-momentos (Hosking, 1985). k > 0 → cola superior acotada. */
+function gevFit(sample) {
+  const x = [...sample].sort((p, q) => p - q);
+  const n = x.length;
+  let b0 = 0, b1 = 0, b2 = 0;
+  for (let i = 0; i < n; i++) {
+    b0 += x[i];
+    b1 += (i / (n - 1)) * x[i];
+    b2 += ((i * (i - 1)) / ((n - 1) * (n - 2))) * x[i];
+  }
+  b0 /= n; b1 /= n; b2 /= n;
+  const l1 = b0, l2 = 2 * b1 - b0, l3 = 6 * b2 - 6 * b1 + b0;
+  if (!(l2 > 0)) return null;
+  const t3 = l3 / l2;
+  const c = 2 / (3 + t3) - Math.LN2 / Math.log(3);
+  const k = 7.8590 * c + 2.9554 * c * c;
+  if (Math.abs(k) < 1e-6) {
+    const alpha = l2 / Math.LN2;
+    return { xi: l1 - 0.5772156649 * alpha, alpha, k: 0 };
+  }
+  const g = gammaFn(1 + k);
+  const alpha = (l2 * k) / ((1 - 2 ** -k) * g);
+  return { xi: l1 - (alpha * (1 - g)) / k, alpha, k };
+}
+function gevQuantile(f, F) {
+  const y = -Math.log(F);
+  return f.k === 0 ? f.xi - f.alpha * Math.log(y) : f.xi + (f.alpha * (1 - y ** f.k)) / f.k;
+}
+function gevCdf(f, x) {
+  if (f.k === 0) return Math.exp(-Math.exp(-(x - f.xi) / f.alpha));
+  const z = 1 - (f.k * (x - f.xi)) / f.alpha;
+  if (z <= 0) return f.k > 0 ? 1 : 0;
+  return Math.exp(-(z ** (1 / f.k)));
+}
+
+/** Extremo de cada año natural con cobertura suficiente. */
+function annualExtremes(values, hi, minCov) {
+  const S = state.station;
+  const acc = new Map();
+  for (let i = 0; i < values.length; i++) {
+    const y = S.years[i];
+    let a = acc.get(y);
+    if (!a) { a = { n: 0, ext: null, i: -1 }; acc.set(y, a); }
+    const x = values[i];
+    if (x === null) continue;
+    a.n++;
+    if (a.ext === null || (hi ? x > a.ext : x < a.ext)) { a.ext = x; a.i = i; }
+  }
+  const out = [];
+  for (const [y, a] of acc) {
+    const diy = (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 366 : 365;
+    if (a.ext !== null && a.n >= minCov * diy) out.push({ y, v: a.ext, i: a.i });
+  }
+  return out.sort((p, q) => p.y - q.y);
+}
+
+// ==========================================================
+// PRODUCTO: Períodos de retorno
+// ==========================================================
+
+const RT_DEFS = {
+  txx: { v: "tmax", hi: true, label: "Tmax más alta del año", unit: "°C", word: "máxima de" },
+  tnx: { v: "tmin", hi: true, label: "Tmin más alta del año", unit: "°C", word: "mínima de" },
+  tnn: { v: "tmin", hi: false, label: "Tmin más baja del año", unit: "°C", word: "mínima de" },
+  rx1: { v: "prec", hi: true, label: "Lluvia máxima en 24 h", unit: "mm", word: "lluvia de" },
+  rgx: { v: "racha", hi: true, label: "Racha máxima del año", unit: "m/s", word: "racha de" },
+};
+
+function runRetorno() {
+  const S = state.station;
+  const def = RT_DEFS[$("rt-var").value];
+  const dos = $("rt-mode").value === "dos";
+  document.querySelectorAll(".rt-dos").forEach((e) => { e.hidden = !dos; });
+  $("rt-unit").textContent = def.unit;
+  const values = S.json.data[def.v];
+  if (!values) { $("rt-note").textContent = "La estación no tiene esta variable."; return; }
+  const ext = annualExtremes(values, def.hi, def.v === "racha" ? 0.8 : 0.9);
+  const yLast = S.yearList[S.yearList.length - 1];
+  if (!state.rtTouched) { $("rt-b2").value = yLast; }
+
+  const periods = dos
+    ? [{ a: +$("rt-a1").value, b: +$("rt-a2").value, color: VAR_COLORS.tmin },
+       { a: +$("rt-b1").value, b: +$("rt-b2").value, color: VAR_COLORS.tmax }]
+    : [{ a: S.yearList[0], b: yLast, color: def.hi ? VAR_COLORS.tmax : VAR_COLORS.tmin }];
+  const sgn = def.hi ? 1 : -1;
+  const fits = [];
+  for (const P of periods) {
+    const sub = ext.filter((e) => e.y >= P.a && e.y <= P.b);
+    P.n = sub.length;
+    if (sub.length >= 3) { P.a = Math.max(P.a, sub[0].y); P.b = Math.min(P.b, sub[sub.length - 1].y); }
+    P.label = `${P.a}–${P.b}`;
+    if (sub.length < 15) { P.fit = null; fits.push(P); continue; }
+    P.fit = gevFit(sub.map((e) => sgn * e.v));
+    P.sub = sub;
+    fits.push(P);
+  }
+  const ok = fits.filter((P) => P.fit);
+  if (!ok.length) {
+    $("rt-note").textContent = `Hacen falta al menos 15 años completos por época (hay ${fits.map((P) => `${P.label}: ${P.n}`).join(", ")}).`;
+    $("rt-table").querySelector("tbody").innerHTML = ""; $("rt-answer").textContent = "";
+    return;
+  }
+
+  const Ts = [];
+  for (let lt = Math.log10(1.1); lt <= Math.log10(500) + 1e-9; lt += 0.02) Ts.push(10 ** lt);
+  const traces = [];
+  for (const P of ok) {
+    const xs = [...P.sub].sort((p, q) => sgn * p.v - sgn * q.v);
+    const n = xs.length;
+    traces.push({ x: xs.map((_, i) => 1 / (1 - (i + 1 - 0.44) / (n + 0.12))), y: xs.map((e) => e.v),
+      mode: "markers", name: `años ${P.label}`, legendgroup: P.label, showlegend: false,
+      marker: { color: P.color, size: 7, opacity: 0.75, line: { color: TH.card, width: 1 } },
+      text: xs.map((e) => fmtDate(S.startMs, e.i)),
+      hovertemplate: `%{text}: %{y:.1f} ${def.unit}<br>período empírico ≈ %{x:.0f} años<extra>${P.label}</extra>` });
+    traces.push({ x: Ts, y: Ts.map((T) => sgn * gevQuantile(P.fit, 1 - 1 / T)), mode: "lines",
+      name: `ajuste ${P.label} (${P.n} años)`, legendgroup: P.label, line: { color: P.color, width: 2.5 },
+      hovertemplate: `cada %{x:.0f} años: %{y:.1f} ${def.unit}<extra>${P.label}</extra>` });
+  }
+  const layout = baseLayout(`${S.json.name} · ${def.label}`);
+  layout.xaxis.type = "log";
+  layout.xaxis.title = { text: "período de retorno (años)" };
+  layout.xaxis.tickvals = [1.1, 2, 5, 10, 20, 50, 100, 200, 500];
+  layout.xaxis.ticktext = ["1", "2", "5", "10", "20", "50", "100", "200", "500"];
+  layout.yaxis.title = { text: def.unit };
+  layout.legend = { orientation: "h", y: -0.16 };
+  Plotly.newPlot("plot-retorno", traces, layout, PLOTLY_CFG);
+
+  const RT = [2, 5, 10, 20, 50, 100];
+  const t = $("rt-table");
+  t.querySelector("thead").innerHTML = `<tr><th>Una vez cada…</th>${ok.map((P) => `<th>${P.label}</th>`).join("")}</tr>`;
+  t.querySelector("tbody").innerHTML = RT.map((T) =>
+    `<tr><td>${T} años</td>${ok.map((P) => `<td>${nf1(sgn * gevQuantile(P.fit, 1 - 1 / T))} ${def.unit}</td>`).join("")}</tr>`).join("");
+
+  // ---- pregunta: ¿cada cuánto se alcanza X? ----
+  let X = parseFloat($("rt-val").value);
+  if (!Number.isFinite(X)) {
+    const rec = ext.reduce((m, e) => (m === null || sgn * e.v > sgn * m.v ? e : m), null);
+    X = rec.v;
+    $("rt-val").placeholder = nf1(X).replace(",", ".");
+  }
+  const cmp = def.hi ? "o más" : "o menos";
+  const parts = ok.map((P) => {
+    const F = gevCdf(P.fit, sgn * X);
+    const T = 1 / (1 - F);
+    let txt;
+    if (F >= 1 - 1e-9) txt = "prácticamente imposible según el ajuste";
+    else if (T > 1000) txt = "menos de una vez cada 1000 años";
+    else if (T < 1.05) txt = "casi todos los años";
+    else txt = `una vez cada <b>${T < 10 ? T.toFixed(1).replace(".", ",") : Math.round(T)} años</b> (${(100 * (1 - F)).toFixed(1).replace(".", ",")} % cada año)`;
+    return `${ok.length > 1 ? `en ${P.label}, ` : ""}${txt}`;
+  });
+  $("rt-answer").innerHTML = `Una ${def.word} <b>${nf1(X)} ${def.unit}</b> ${cmp} se espera ${parts.join("; ")}.`;
+
+  const bounded = ok.filter((P) => P.fit.k > 0).map((P) => `${P.label}: ${nf1(sgn * (P.fit.xi + P.fit.alpha / P.fit.k))} ${def.unit}`);
+  $("rt-note").textContent =
+    `GEV ajustada por L-momentos al extremo de cada año natural con ≥ ${def.v === "racha" ? 80 : 90} % de días con dato. ` +
+    "Supone un clima estable dentro de cada época: comparar dos épocas muestra cuánto ha cambiado. " +
+    "Con menos de 30 años la incertidumbre es grande, y los períodos mucho más largos que la serie son extrapolación. " +
+    (bounded.length ? `El ajuste tiene un techo teórico (${bounded.join(" · ")}). ` : "") +
+    (def.v === "racha" ? "Las rachas dependen mucho del anemómetro y su emplazamiento." : "");
+}
+
+// ==========================================================
+// PRODUCTO: Sequía (SPI)
+// ==========================================================
+
+const SPI_CATS = [
+  [2, "extremadamente húmedo"], [1.5, "muy húmedo"], [1, "moderadamente húmedo"], [-1, "normal"],
+  [-1.5, "sequía moderada"], [-2, "sequía severa"], [-Infinity, "sequía extrema"],
+];
+const spiCat = (z) => SPI_CATS.find(([t]) => z >= t || (t === -1 && z > -1))[1];
+
+function monthlyPrec(S) {
+  const vals = S.json.data.prec;
+  const y0 = S.years[0];
+  const nM = (S.years[S.years.length - 1] - y0 + 1) * 12;
+  const sum = new Array(nM).fill(0), n = new Array(nM).fill(0), tot = new Array(nM).fill(0);
+  for (let i = 0; i < vals.length; i++) {
+    const t = (S.years[i] - y0) * 12 + Math.floor(S.md[i] / 100) - 1;
+    tot[t]++;
+    if (vals[i] !== null) { sum[t] += vals[i]; n[t]++; }
+  }
+  const DIM = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return { y0, m: sum.map((s, t) => {
+    const mo = t % 12, y = y0 + Math.floor(t / 12);
+    const dim = DIM[mo] + (mo === 1 && (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 1 : 0);
+    return n[t] >= 0.9 * dim ? s : null;
+  }) };
+}
+
+function computeSPI(monthly, k, refA, refB) {
+  const { y0, m } = monthly;
+  const acc = m.map((_, t) => {
+    if (t < k - 1) return null;
+    let s = 0;
+    for (let j = t - k + 1; j <= t; j++) { if (m[j] === null) return null; s += m[j]; }
+    return s;
+  });
+  const spi = new Array(acc.length).fill(null);
+  for (let mo = 0; mo < 12; mo++) {
+    const idx = [];
+    for (let t = mo; t < acc.length; t += 12) if (acc[t] !== null) idx.push(t);
+    let sample = idx.filter((t) => { const y = y0 + Math.floor(t / 12); return y >= refA && y <= refB; }).map((t) => acc[t]);
+    if (sample.length < 20) sample = idx.map((t) => acc[t]);
+    if (sample.length < 10) continue;
+    const pos = sample.filter((x) => x > 0);
+    const q = (sample.length - pos.length) / sample.length;
+    if (pos.length < 5) continue;
+    const mu = mean(pos);
+    const A = Math.log(mu) - mean(pos.map(Math.log));
+    const alpha = A > 0 ? (1 + Math.sqrt(1 + (4 * A) / 3)) / (4 * A) : 50;
+    const beta = mu / alpha;
+    const nZero = sample.length - pos.length;
+    for (const t of idx) {
+      const x = acc[t];
+      let H = x > 0 ? q + (1 - q) * gammaP(alpha, x / beta) : (nZero + 1) / (2 * (sample.length + 1));
+      H = Math.min(Math.max(H, 1e-6), 1 - 1e-6);
+      spi[t] = normInv(H);
+    }
+  }
+  return spi;
+}
+
+function runSPI() {
+  const S = state.station;
+  if (!S.json.data.prec) { $("spi-note").textContent = "La estación no tiene precipitación."; return; }
+  const k = +$("spi-k").value;
+  const [refA, refB] = getRef();
+  const M = monthlyPrec(S);
+  const spi = computeSPI(M, k, refA, refB);
+  const x = [], y = [];
+  spi.forEach((z, t) => {
+    if (z === null) return;
+    const yy = M.y0 + Math.floor(t / 12), mo = (t % 12) + 1;
+    x.push(`${yy}-${String(mo).padStart(2, "0")}-15`); y.push(z);
+  });
+  if (y.length < 24) {
+    $("spi-note").textContent = "Serie de precipitación demasiado corta o con demasiados huecos para el SPI.";
+    $("spi-now").textContent = "";
+    return;
+  }
+  const scale = [[0, "#8c510a"], [0.3, "#d8b365"], [0.5, "#f4f1ea"], [0.7, "#5ab4ac"], [1, "#01665e"]];
+  const view = $("spi-view").value;
+  const layout = baseLayout(`${S.json.name} · SPI-${k} (lluvia acumulada en ${k} ${k === 1 ? "mes" : "meses"}) · ajuste gamma sobre ${refA}–${refB}`);
+  layout.yaxis.title = { text: `SPI-${k}` };
+  layout.yaxis.range = [-3.2, 3.2];
+  layout.bargap = 0;
+  layout.showlegend = false;
+  if (view !== "all") {
+    const lastY = +x[x.length - 1].slice(0, 4);
+    layout.xaxis.range = [`${lastY - +view}-12-01`, x[x.length - 1].slice(0, 8) + "28"];
+  }
+  layout.shapes = [-2, -1.5, -1, 1, 1.5, 2].map((v) => ({ type: "line", xref: "paper", x0: 0, x1: 1, y0: v, y1: v,
+    line: { color: TH.muted, width: 0.8, dash: Math.abs(v) === 1 ? "dash" : "dot" } }));
+  Plotly.newPlot("plot-spi", [{
+    x, y, type: "bar", marker: { color: y, colorscale: scale, cmin: -2.5, cmax: 2.5 },
+    text: y.map(spiCat), hovertemplate: "%{x|%b %Y}: %{y:.2f} · %{text}<extra></extra>",
+  }], layout, PLOTLY_CFG);
+
+  // ---- calendario año × mes ----
+  const yFirst = M.y0, yLastAll = M.y0 + Math.floor((spi.length - 1) / 12);
+  const yrs = [], z = [], txt = [];
+  for (let yy = yLastAll; yy >= yFirst; yy--) {
+    const row = [], tr = [];
+    let any = false;
+    for (let mo = 0; mo < 12; mo++) {
+      const v = spi[(yy - M.y0) * 12 + mo];
+      row.push(v); tr.push(v === null ? "" : `${MESES[mo + 1]} ${yy}: ${v.toFixed(2)} · ${spiCat(v)}`);
+      if (v !== null) any = true;
+    }
+    if (any) { yrs.push(String(yy)); z.push(row); txt.push(tr); }
+  }
+  const lc = baseLayout("");
+  lc.margin = { l: 50, r: 20, t: 10, b: 30 };
+  lc.yaxis.type = "category";
+  lc.yaxis.dtick = 5;
+  lc.yaxis.autorange = "reversed";
+  lc.xaxis.side = "top";
+  $("plot-spi-cal").style.height = `${Math.max(260, Math.min(1100, yrs.length * 11 + 60))}px`;
+  Plotly.newPlot("plot-spi-cal", [{
+    type: "heatmap", x: MESES.slice(1), y: yrs, z, text: txt, hovertemplate: "%{text}<extra></extra>",
+    colorscale: scale, zmin: -2.5, zmax: 2.5, hoverongaps: false, xgap: 1, ygap: 1,
+    colorbar: { title: { text: "SPI" }, thickness: 12, outlinewidth: 0 },
+  }], lc, PLOTLY_CFG);
+
+  // ---- situación actual y peor sequía (criterio de McKee) ----
+  let lastT = spi.length - 1;
+  while (lastT >= 0 && spi[lastT] === null) lastT--;
+  const lz = spi[lastT];
+  const lyy = M.y0 + Math.floor(lastT / 12), lmo = (lastT % 12) + 1;
+  $("spi-now").innerHTML = `Último mes con dato (<b>${MESES_LARGO[lmo]} ${lyy}</b>): SPI-${k} = <b>${lz.toFixed(2).replace(".", ",").replace("-", "−")}</b> → ${spiCat(lz)}.`;
+  const events = [];
+  let st = -1, minz = 0;
+  for (let t = 0; t <= spi.length; t++) {
+    const v = t < spi.length ? spi[t] : null;
+    if (v !== null && v < 0) { if (st < 0) { st = t; minz = v; } minz = Math.min(minz, v); }
+    else { if (st >= 0 && minz <= -1) events.push({ st, len: t - st, minz }); st = -1; }
+  }
+  const lab = (t) => `${MESES[(t % 12) + 1]} ${M.y0 + Math.floor(t / 12)}`;
+  const longest = events.sort((a, b) => b.len - a.len)[0];
+  const worst = [...events].sort((a, b) => a.minz - b.minz)[0];
+  $("spi-note").textContent =
+    (longest ? `Sequía más larga: ${longest.len} meses (${lab(longest.st)} → ${lab(longest.st + longest.len - 1)}). ` : "") +
+    (worst ? `Más intensa: SPI ${worst.minz.toFixed(2)} (${lab(worst.st)} → ${lab(worst.st + worst.len - 1)}). ` : "") +
+    "Episodio de sequía (McKee): meses seguidos con SPI negativo que llegan a −1 o menos. " +
+    "Meses con más del 10 % de días sin dato quedan en blanco y cortan las acumulaciones.";
 }
 
 // ==========================================================
@@ -2002,6 +2805,10 @@ const EXPORT_SIZES = {
   "plot-duelo": [1600, 800],
   "plot-duelo-diff": [1600, 800],
   "plot-olas-cal": [1600, 1200],
+  "plot-nacional-mapa": [1500, 1300],
+  "plot-nacional-regtr": [1600, 800],
+  "plot-spi-cal": [1400, 1600],
+  "plot-retorno": [1500, 1100],
 };
 
 async function exportActivePanel() {
@@ -2049,6 +2856,7 @@ Object.assign(TAB_RUNNERS, {
   indices: runIndices, rachas: runStreaks, comparador: runComparator,
   olas: runWaves, records: runRecords, periodos: runPeriodos, nacional: runNacional,
   distribucion: runDistribution, calendario: runCalendar, duelo: runDuel,
+  retorno: runRetorno, spi: runSPI,
 });
 
 const QUICK_PICKS = [
@@ -2097,6 +2905,36 @@ function bindControls() {
       activateTab(currentTab());
     });
   }
+  document.querySelectorAll(".seg-switch").forEach((seg) => seg.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (b) activateTab(b.dataset.go);
+  }));
+  $("na-view").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    state.natView = b.dataset.view;
+    $("na-view").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    runPanel("nacional");
+  });
+  $("na-map-year").addEventListener("input", () => {
+    state.natYearTouched = true;
+    $("na-map-year-val").textContent = $("na-map-year").value;
+    safeRun(runNatMap);
+  });
+  $("na-play").addEventListener("click", () => {
+    if (state.natPlay) { stopNatPlay(); return; }
+    const sl = $("na-map-year");
+    state.natYearTouched = true;
+    if (+sl.value >= +sl.max) sl.value = sl.min;
+    $("na-play").textContent = "❚❚";
+    state.natPlay = setInterval(() => {
+      if (+sl.value >= +sl.max) { stopNatPlay(); return; }
+      sl.value = +sl.value + 1;
+      safeRun(runNatMap);
+    }, 450);
+  });
+  for (const id of ["rt-a1", "rt-a2", "rt-b1", "rt-b2"]) $(id).addEventListener("change", () => { state.rtTouched = true; });
+  $("rt-var").addEventListener("change", () => { $("rt-val").value = ""; });
   $("rec-scope").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
@@ -2156,6 +2994,22 @@ async function init() {
   const lastEnd = state.index.stations.reduce((m, s) => (s.end > m ? s.end : m), "");
   $("hero-badge").textContent =
     `${state.index.n_stations} estaciones · datos diarios de AEMET hasta ${lastEnd.slice(0, 4)}`;
+  loadRecent().then(() => {
+    const R = state.recent;
+    let last = R && R.last_data;
+    if (R && !last) {
+      let li = -1;
+      for (const st of Object.values(R.stations)) {
+        const tx = st.tmax || [];
+        for (let i = tx.length - 1; i > li; i--) if (tx[i] !== null) { li = i; break; }
+      }
+      if (li >= 0) last = new Date(Date.parse(R.start + "T00:00:00Z") + li * MS_DAY).toISOString().slice(0, 10);
+    }
+    if (!last) return;
+    const [yy, mm, dd] = last.split("-").map(Number);
+    $("hero-badge").textContent =
+      `${state.index.n_stations} estaciones · datos diarios hasta el ${dd} de ${MESES_LARGO[mm]} de ${yy}`;
+  });
   makeSearch($("hero-search"), $("hero-results"), (id) => selectStation(id));
   makeSearch($("station-search"), $("search-results"), (id) => selectStation(id));
   makeSearch($("du-search"), $("du-results"), async (id) => {
