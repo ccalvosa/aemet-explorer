@@ -24,8 +24,22 @@ const MESES = ["", "ene", "feb", "mar", "abr", "may", "jun",
 const MESES_LARGO = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
                      "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const FONT = "Plus Jakarta Sans, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif";
-const PLOTLY_CFG = { responsive: true, displaylogo: false,
+const PLOTLY_CFG = { responsive: true, displaylogo: false, locale: "es",
                      modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] };
+// Fechas de los ejes y tooltips en español
+if (window.Plotly) {
+  Plotly.register({
+    moduleType: "locale", name: "es", dictionary: {},
+    format: {
+      days: ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"],
+      shortDays: ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"],
+      months: ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+               "septiembre", "octubre", "noviembre", "diciembre"],
+      shortMonths: ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"],
+      date: "%d/%m/%Y",
+    },
+  });
+}
 
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -2184,7 +2198,7 @@ function runNatMap() {
   layout.margin = { l: 0, r: 0, t: 44, b: 0 };
   layout.geo = { ...geoBase, lataxis: { range: [35.2, 44.2] }, lonaxis: { range: [-10.2, 4.8] }, domain: { x: [0, 1], y: [0, 1] } };
   layout.geo2 = { ...geoBase, lataxis: { range: [27.5, 29.6] }, lonaxis: { range: [-18.4, -13.2] },
-                  domain: { x: [0, 0.3], y: [0, 0.24] }, showframe: true, framecolor: TH.border };
+                  domain: { x: [0, 0.24], y: [0, 0.19] }, showframe: true, framecolor: TH.border };
   layout.showlegend = false;
   const traces = [mk(pts.filter((p) => !canary(p)), "geo", true), mk(pts.filter(canary), "geo2", false)];
   Plotly.react("plot-nacional-mapa", traces, layout, PLOTLY_CFG);
@@ -2811,37 +2825,84 @@ const EXPORT_SIZES = {
   "plot-retorno": [1500, 1100],
 };
 
+function loadImage(src) {
+  return new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => rej(new Error("no se pudo generar la imagen"));
+    im.src = src;
+  });
+}
+
+/** Exporta todos los gráficos visibles del análisis en UNA imagen PNG, con firma y fuente al pie. */
 async function exportActivePanel() {
   const panel = document.querySelector(".panel:not([hidden])");
-  if (!panel || !state.station) return;
-  const plots = [...panel.querySelectorAll(".plot")].filter((d) => d.data && d.data.length);
-  if (!plots.length) return;
+  if (!panel) return;
+  const plots = [...panel.querySelectorAll(".plot")]
+    .filter((d) => d.offsetParent !== null && d.data && d.data.length && d.layout);
   const btn = $("export-png");
-  btn.disabled = true; btn.textContent = "…";
+  if (!plots.length) {
+    alert("No hay ningún gráfico que exportar en esta sección.");
+    return;
+  }
+  btn.disabled = true; btn.textContent = "Generando…";
+  const SCALE = 2;
   try {
+    const single = plots.length === 1;
+    const imgs = [];
     for (const div of plots) {
-      const [w, hgt] = EXPORT_SIZES[div.id] || [1600, 1000];
+      let [w, hgt] = EXPORT_SIZES[div.id] || [1600, 1000];
+      if (!single) { hgt = Math.round((hgt * 1600) / w); w = 1600; }
       const data = JSON.parse(JSON.stringify(div.data));
       const layout = JSON.parse(JSON.stringify(div.layout));
-      layout.width = w; layout.height = hgt;
+      delete layout.width; delete layout.height; delete layout.template;
       layout.font = { ...(layout.font || {}), size: 22 };
-      if (layout.title) layout.title.font = { family: FONT, size: 32 };
-      layout.margin = { l: 100, r: 70, t: layout.title ? 110 : 60, b: 150 };
-      layout.annotations = (layout.annotations || []).concat([
-        { text: "<b>@MeteoZGZ</b>", xref: "paper", yref: "paper", x: 0, y: 0,
-          xanchor: "left", yshift: -110, showarrow: false,
-          font: { size: 26, color: TH.fg } },
-        { text: "Datos: AEMET OpenData · ccalvosa.github.io/aemet-explorer",
-          xref: "paper", yref: "paper", x: 1, y: 0, xanchor: "right", yshift: -110,
-          showarrow: false, font: { size: 17, color: TH.muted } },
-      ]);
-      const url = await Plotly.toImage({ data, layout }, {
-        format: "png", width: w, height: hgt, scale: 2 });
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${state.station.json.id}_${div.id.replace("plot-", "")}.png`;
-      a.click();
+      if (layout.title && layout.title.text) layout.title.font = { family: FONT, size: 30, color: TH.fg };
+      const hasLegend = layout.showlegend !== false && data.filter((t) => t.showlegend !== false).length > 1;
+      const isGeo = data.some((t) => t.type === "scattergeo");
+      layout.margin = isGeo ? { l: 10, r: 10, t: 90, b: 10 }
+        : { l: 110, r: 80, t: layout.title && layout.title.text ? 100 : 40, b: hasLegend ? 160 : 90 };
+      if (hasLegend && layout.legend && layout.legend.orientation === "h") layout.legend.y = -0.16;
+      const url = await Plotly.toImage({ data, layout, config: { locale: "es" } },
+        { format: "png", width: w, height: hgt, scale: SCALE });
+      imgs.push(await loadImage(url));
     }
+    const FOOT = 90 * SCALE;
+    const W = Math.max(...imgs.map((im) => im.width));
+    const H = imgs.reduce((s, im) => s + im.height, 0) + FOOT;
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = TH.card; ctx.fillRect(0, 0, W, H);
+    let y = 0;
+    for (const im of imgs) { ctx.drawImage(im, 0, y); y += im.height; }
+    ctx.strokeStyle = TH.border; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(40 * SCALE, y + 1); ctx.lineTo(W - 40 * SCALE, y + 1); ctx.stroke();
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = TH.fg;
+    ctx.font = `800 ${26 * SCALE}px "Plus Jakarta Sans", system-ui, sans-serif`;
+    ctx.textAlign = "left";
+    ctx.fillText("@MeteoZGZ", 40 * SCALE, y + FOOT / 2);
+    ctx.fillStyle = TH.muted;
+    ctx.font = `500 ${18 * SCALE}px "Plus Jakarta Sans", system-ui, sans-serif`;
+    ctx.textAlign = "right";
+    ctx.fillText("Datos: AEMET OpenData · ccalvosa.github.io/aemet-explorer", W - 40 * SCALE, y + FOOT / 2);
+
+    const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
+    if (!blob) throw new Error("el navegador no pudo crear el PNG");
+    const name = panel.id.replace("panel-", "") +
+      (panel.id === "panel-nacional" ? `-${state.natView || "evol"}` : "");
+    const prefix = state.station && panel.id !== "panel-nacional" ? state.station.json.id : "espana";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${prefix}_${name}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  } catch (e) {
+    console.error(e);
+    alert(`No se pudo exportar la imagen: ${e.message || e}`);
   } finally {
     btn.disabled = false; btn.textContent = "⤓ PNG";
   }
