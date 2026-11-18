@@ -1,37 +1,58 @@
 /* ==========================================================
-   Explorador climático AEMET — app.js (v2)
-   9 productos + efemérides + mapa. Todo en cliente.
+   Explorador climático AEMET — app.js (v3)
+   13 análisis + récords del día/mes/absolutos. Todo en cliente.
    ========================================================== */
 
 "use strict";
 
 // ---------- constantes ----------
 const DATA_URL = "data";
-const VAR_COLORS = { tmax: "#ff7a45", tmed: "#f7c948", tmin: "#4dabf7", prec: "#7ee787", dtr: "#c792ea" };
+// Colores de variable y del tema: se rellenan desde las variables CSS
+// (refreshTheme) para que los gráficos sigan el tema claro/oscuro.
+const VAR_COLORS = { tmax: "#e8590c", tmed: "#e5a00d", tmin: "#1c7ed6", prec: "#2b8a3e", dtr: "#9c36b5" };
+const TH = { bg: "#f6f4ef", card: "#ffffff", card2: "#f2efe9", fg: "#1f2430", muted: "#6b7280",
+             grid: "#ece8e0", border: "#e5e0d7", band: "rgba(107,114,128,0.2)", accent: "#e8590c" };
+let ACCENT = "#d6336c";
 const VAR_LABELS = {
   tmax: "Tmax", tmed: "Tmed", tmin: "Tmin",
   prec: "Precipitación", racha: "Racha viento", sol: "Sol", dtr: "Amplitud térmica",
 };
 const VAR_UNITS = { tmax: "°C", tmed: "°C", tmin: "°C", prec: "mm", racha: "m/s", sol: "h", dtr: "°C" };
-const ACCENT = "#ff4d4d";
 const MS_DAY = 86400000;
 const MESES = ["", "ene", "feb", "mar", "abr", "may", "jun",
                "jul", "ago", "sep", "oct", "nov", "dic"];
+const MESES_LARGO = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
+                     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const FONT = "Plus Jakarta Sans, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif";
+const PLOTLY_CFG = { responsive: true, displaylogo: false,
+                     modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] };
 
-const PLOTLY_BASE = {
-  paper_bgcolor: "#0d1117",
-  plot_bgcolor: "#0d1117",
-  font: { family: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif", color: "#e6edf3", size: 13 },
-  margin: { l: 55, r: 20, t: 40, b: 45 },
-  xaxis: { gridcolor: "#2b3340", zerolinecolor: "#2b3340" },
-  yaxis: { gridcolor: "#2b3340", zerolinecolor: "#2b3340" },
-  hoverlabel: {
-    bgcolor: "#1b2330",
-    bordercolor: "#2b3340",
-    font: { color: "#ffffff", family: "system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif", size: 13 },
-  },
-};
-const PLOTLY_CFG = { responsive: true, displaylogo: false };
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function hexToRgba(hex, a) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+function refreshTheme() {
+  for (const v of ["tmax", "tmed", "tmin", "prec", "dtr"]) VAR_COLORS[v] = cssVar(`--${v}`) || VAR_COLORS[v];
+  for (const [k, css] of [["bg", "--bg"], ["card", "--card"], ["card2", "--card-2"], ["fg", "--fg"],
+                          ["muted", "--muted"], ["grid", "--grid"], ["border", "--border"], ["accent", "--accent"]]) {
+    TH[k] = cssVar(css) || TH[k];
+  }
+  TH.band = hexToRgba(TH.muted, 0.22);
+  ACCENT = cssVar("--hl") || ACCENT;
+}
+
+function isDark() {
+  const t = document.documentElement.dataset.theme;
+  if (t) return t === "dark";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
 
 // Secuencia de mes-día de un año bisiesto (366 posiciones) y de uno no bisiesto
 const MD_SEQ = (() => {
@@ -56,11 +77,21 @@ const state = {
 // ---------- helpers ----------
 const $ = (id) => document.getElementById(id);
 
-function titleFont() { return { family: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", size: 16 }; }
+function titleFont() { return { family: FONT, size: 15, color: TH.fg }; }
 
 function baseLayout(titleText) {
-  const l = structuredClone(PLOTLY_BASE);
-  if (titleText) l.title = { text: titleText, font: titleFont(), x: 0.02 };
+  const ax = { gridcolor: TH.grid, zerolinecolor: TH.border, linecolor: TH.border, tickcolor: TH.border };
+  const l = {
+    paper_bgcolor: TH.card,
+    plot_bgcolor: TH.card,
+    font: { family: FONT, color: TH.fg, size: 12.5 },
+    margin: { l: 55, r: 20, t: 44, b: 45 },
+    xaxis: { ...ax },
+    yaxis: { ...ax },
+    hoverlabel: { bgcolor: TH.card, bordercolor: TH.border, font: { color: TH.fg, family: FONT, size: 13 } },
+    legend: { bgcolor: "rgba(0,0,0,0)" },
+  };
+  if (titleText) l.title = { text: titleText, font: titleFont(), x: 0.01, xanchor: "left" };
   return l;
 }
 
@@ -223,7 +254,8 @@ function makeSearch(inputEl, listEl, onPick) {
       const li = document.createElement("li");
       li.innerHTML =
         `<span class="r-name">${st.name}</span>` +
-        `<span class="r-meta">${st.id} · ${st.province} · ${st.start.slice(0, 4)}–${st.end.slice(0, 4)}</span>`;
+        `<span class="r-meta">${st.province} · ${st.start.slice(0, 4)}–${st.end.slice(0, 4)}` +
+        `${st.altitude !== null ? ` · ${st.altitude} m` : ""} · ${st.id}</span>`;
       li.addEventListener("mousedown", () => { listEl.hidden = true; inputEl.value = ""; onPick(st.id); });
       listEl.appendChild(li);
     }
@@ -232,10 +264,15 @@ function makeSearch(inputEl, listEl, onPick) {
   inputEl.addEventListener("input", () => {
     const q = normalize(inputEl.value);
     if (q.length < 2) { listEl.hidden = true; return; }
+    // primero los nombres que empiezan por la búsqueda; luego, las series más largas
+    const score = (st) => {
+      const n = normalize(st.name);
+      return (st.id.toLowerCase() === q ? 0 : n.startsWith(q) ? 1 : n.includes(q) ? 2 : 3) * 1e6 - st.n_days;
+    };
     render(state.index.stations.filter((st) =>
       normalize(st.name).includes(q) ||
       normalize(st.province).includes(q) ||
-      st.id.toLowerCase().startsWith(q)).slice(0, 12));
+      st.id.toLowerCase().startsWith(q)).sort((a, b) => score(a) - score(b)).slice(0, 12));
   });
   inputEl.addEventListener("keydown", (e) => {
     const items = [...listEl.children];
@@ -299,24 +336,81 @@ async function loadStation(id) {
   return makeCalendar(mergeRecent(await res.json()));
 }
 
-async function selectStation(id) {
-  state.station = await loadStation(id);
+// ---------- carga y navegación ----------
+
+function showLoader(txt) { $("loader-txt").textContent = txt; $("loader").hidden = false; }
+function hideLoader() { $("loader").hidden = true; }
+
+function currentTab() {
+  const a = document.querySelector(".tab.active");
+  return a ? a.dataset.tab : "anio";
+}
+
+/** Muestra la vista de análisis; con o sin ficha de estación. */
+function showApp() {
+  $("welcome").hidden = true;
+  $("app").hidden = false;
+  $("top-search").hidden = false;
+  $("station-plate").hidden = !state.station;
+  document.querySelectorAll(".tab").forEach((b) => {
+    b.disabled = !state.station && b.dataset.tab !== "nacional";
+    b.title = b.disabled ? "Elige antes una estación" : "";
+  });
+}
+
+function updateHash() {
+  const id = state.station ? state.station.json.id : "espana";
+  const h = `#${encodeURIComponent(id)}/${currentTab()}`;
+  if (location.hash !== h) history.replaceState(null, "", h);
+}
+
+async function selectStation(id, tab) {
+  const meta = state.index.stations.find((s) => s.id === id);
+  if (!meta) return;
+  showLoader(`Cargando ${meta.name}…`);
+  try {
+    state.station = await loadStation(id);
+  } catch {
+    hideLoader();
+    alert(`No se pudo cargar la estación ${id}.`);
+    return;
+  }
+  hideLoader();
+  showApp();
   renderPlate();
   renderEphemeris();
-  $("tabs").hidden = false;
-  $("welcome").hidden = true;
-  $("sidebar-empty").hidden = true;
   populateYearSelects();
-  activateTab(document.querySelector(".tab.active").dataset.tab);
+  activateTab(tab && $(`panel-${tab}`) ? tab : currentTab());
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
+
+function goNational() {
+  showApp();
+  activateTab("nacional");
+}
+
+function routeFromHash() {
+  const m = /^#\/?([^/]+)(?:\/([a-z]+))?/.exec(location.hash);
+  if (!m) return false;
+  const id = decodeURIComponent(m[1]);
+  if (id === "espana") { goNational(); return true; }
+  if (!state.index.stations.some((s) => s.id === id)) return false;
+  selectStation(id, m[2]);
+  return true;
+}
+
+// ---------- ficha de estación ----------
 
 function renderPlate() {
   const st = state.station.json;
-  $("plate-id").textContent = st.id;
-  $("plate-alt").textContent = st.altitude !== null ? `${st.altitude} m` : "";
-  $("plate-name").textContent = st.name;
+  const y0 = st.start.slice(0, 4), y1 = st.end.slice(0, 4);
   $("plate-province").textContent = st.province;
-  $("plate-period").textContent = `${st.start} → ${st.end}`;
+  $("plate-name").textContent = st.name;
+  $("plate-id").textContent = `Indicativo ${st.id}`;
+  $("plate-alt").textContent = st.altitude !== null ? `${st.altitude} m de altitud` : "altitud desconocida";
+  $("plate-alt").hidden = false;
+  $("plate-period").textContent = `${y0} – ${y1} · ${y1 - y0 + 1} años`;
+  document.title = `${st.name} · Explorador climático AEMET`;
 
   const wrap = $("coverage-strips");
   wrap.innerHTML = "";
@@ -325,8 +419,7 @@ function renderPlate() {
     const row = document.createElement("div");
     row.className = "coverage-row";
     const label = document.createElement("span");
-    label.className = "coverage-var";
-    label.textContent = v;
+    label.textContent = VAR_LABELS[v] === "Precipitación" ? "Prec" : VAR_LABELS[v];
     const canvas = document.createElement("canvas");
     canvas.className = "coverage-strip";
     canvas.width = yearKeys.length; canvas.height = 1;
@@ -337,7 +430,7 @@ function renderPlate() {
       const diy = (+yr % 4 === 0 && (+yr % 100 !== 0 || +yr % 400 === 0)) ? 366 : 365;
       tv += valid; td += diy;
       const frac = Math.min(1, valid / diy);
-      ctx.fillStyle = frac === 0 ? "#0d1117" : `rgba(255,122,69,${0.15 + 0.85 * frac})`;
+      ctx.fillStyle = frac === 0 ? TH.card2 : hexToRgba(TH.accent, 0.15 + 0.85 * frac);
       ctx.fillRect(i, 0, 1, 1);
     });
     const pct = document.createElement("span");
@@ -346,80 +439,46 @@ function renderPlate() {
     row.append(label, canvas, pct);
     wrap.appendChild(row);
   }
-  $("station-plate").hidden = false;
 }
 
-function renderEphemeris() {
-  const S = state.station;
-  const box = $("ephemeris");
-  const now = new Date();
-  const todayMd = (now.getMonth() + 1) * 100 + now.getDate();
-  const [refA, refB] = getRef();
+// ---------- récords: hoy / este mes / siempre ----------
 
-  // récords del día (toda la serie, ese mes-día exacto)
-  function recordOf(v, fn) {
-    let best = null, bestYr = null;
-    const vals = S.json.data[v];
-    for (let i = 0; i < vals.length; i++) {
-      if (S.md[i] !== todayMd || vals[i] === null) continue;
-      if (best === null || fn(vals[i], best)) { best = vals[i]; bestYr = S.years[i]; }
-    }
-    return best === null ? null : { v: best, yr: bestYr };
-  }
-  const rTmax = recordOf("tmax", (a, b) => a > b);
-  const rTmin = recordOf("tmin", (a, b) => a < b);
-  const rPrec = recordOf("prec", (a, b) => a > b);
+const nf1 = (x) => x.toFixed(1).replace(".", ",").replace("-", "−");
 
-  let html = `<h4>Efemérides · ${mdLabel(todayMd)}</h4>`;
-  if (rTmax) html += `<div class="eph-row"><span class="eph-tmax">Tmax ↑</span><span class="mono">${rTmax.v.toFixed(1)} °C · ${rTmax.yr}</span></div>`;
-  if (rTmin) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↓</span><span class="mono">${rTmin.v.toFixed(1)} °C · ${rTmin.yr}</span></div>`;
-  if (rPrec && rPrec.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec</span><span class="mono">${rPrec.v.toFixed(1)} mm · ${rPrec.yr}</span></div>`;
-
-  // último dato de tmax en percentil de la referencia (md ±3)
-  const tmax = S.json.data.tmax;
-  let lastIdx = -1;
-  for (let i = tmax.length - 1; i >= 0; i--) if (tmax[i] !== null) { lastIdx = i; break; }
-  if (lastIdx >= 0 && S.md[lastIdx] !== 229) {
-    const clim = climDaily(tmax, refA, refB, 3);
-    const pool = clim.sorted.get(S.md[lastIdx]);
-    if (pool && pool.length > 20) {
-      let rank = 0;
-      for (const x of pool) if (x <= tmax[lastIdx]) rank++;
-      const pct = Math.round((100 * rank) / pool.length);
-      html += `<p class="eph-note">Última Tmax (${fmtDate(S.startMs, lastIdx)}): ` +
-        `${tmax[lastIdx].toFixed(1)} °C → percentil ${pct} de ${refA}–${refB} para esas fechas.</p>`;
-    }
-  }
-  if (!rTmax && !rTmin) html += `<p class="eph-note">Sin datos para esta fecha.</p>`;
-
-  // ---- récords absolutos y por mes (un solo pase por la serie) ----
-  const abs = { tmax: null, txm: null, tnM: null, tmin: null, prec: null };
-  const yearTot = new Map(), monthTot = new Map();
-  const nowMonth = now.getMonth() + 1;
-  const mon = Array.from({ length: 13 }, () => ({ tmax: null, tmin: null, prec: null }));
+/** Un solo pase por la serie: extremos del día de hoy, del mes en curso y absolutos. */
+function computeRecords(S) {
   const D = S.json.data;
+  const now = new Date();
+  const cm = now.getMonth() + 1;
+  const todayMd = cm * 100 + now.getDate();
+  const mk = () => ({ txM: null, txm: null, tnM: null, tnm: null, pM: null });
+  const day = mk(), mon = mk(), abs = mk();
+  const upd = (slot, val, hi, i) => {
+    if (val === null || val === undefined) return slot;
+    if (!slot || (hi ? val > slot.v : val < slot.v)) return { v: val, i };
+    return slot;
+  };
+  const feed = (R, i) => {
+    R.txM = upd(R.txM, D.tmax[i], true, i);
+    R.txm = upd(R.txm, D.tmax[i], false, i);
+    R.tnM = upd(R.tnM, D.tmin[i], true, i);
+    R.tnm = upd(R.tnm, D.tmin[i], false, i);
+    if (D.prec) R.pM = upd(R.pM, D.prec[i], true, i);
+  };
+  const yearTot = new Map(), monthTot = new Map();
   for (let i = 0; i < D.tmax.length; i++) {
-    const mo = Math.floor(S.md[i] / 100);
-    const upd = (slot, val, hi) => {
-      if (val === null) return slot;
-      if (!slot || (hi ? val > slot.v : val < slot.v)) return { v: val, i };
-      return slot;
-    };
-    abs.tmax = upd(abs.tmax, D.tmax[i], true);
-    abs.txm = upd(abs.txm, D.tmax[i], false);
-    abs.tnM = upd(abs.tnM, D.tmin[i], true);
-    abs.tmin = upd(abs.tmin, D.tmin[i], false);
-    abs.prec = upd(abs.prec, D.prec[i], true);
-    mon[mo].tmax = upd(mon[mo].tmax, D.tmax[i], true);
-    mon[mo].tmin = upd(mon[mo].tmin, D.tmin[i], false);
-    mon[mo].prec = upd(mon[mo].prec, D.prec[i], true);
-    if (D.prec[i] !== null) {
+    const md = S.md[i], mo = Math.floor(md / 100);
+    feed(abs, i);
+    if (mo === cm) feed(mon, i);
+    if (md === todayMd) feed(day, i);
+    const p = D.prec ? D.prec[i] : null;
+    if (p !== null) {
       const yy = S.years[i];
       const ty = yearTot.get(yy) || { sum: 0, n: 0 };
-      ty.sum += D.prec[i]; ty.n++; yearTot.set(yy, ty);
-      if (mo === nowMonth) {
+      ty.sum += p; ty.n++; yearTot.set(yy, ty);
+      if (mo === cm) {
         const tm = monthTot.get(yy) || { sum: 0, n: 0 };
-        tm.sum += D.prec[i]; tm.n++; monthTot.set(yy, tm);
+        tm.sum += p; tm.n++; monthTot.set(yy, tm);
       }
     }
   }
@@ -433,51 +492,78 @@ function renderEphemeris() {
     }
     return best;
   }
-  const dInM = (y) => DIM[nowMonth] + (nowMonth === 2 ? leap(y) : 0);
+  const dInM = (y) => DIM[cm] + (cm === 2 ? leap(y) : 0);
   const dInY = (y) => 365 + leap(y);
-  const dryMonth = extTotal(monthTot, dInM, false);
-  const wetMonth = extTotal(monthTot, dInM, true);
-  const dryYear = extTotal(yearTot, dInY, false);
-  const wetYear = extTotal(yearTot, dInY, true);
-  const fd = (r) => fmtDate(S.startMs, r.i);
-  const fy = (r) => S.years[r.i];
-
-
-  // récords del mes en curso: extremos de tmax y tmin, y prec máxima
-  const cm = now.getMonth() + 1;
-  const cur = { txM: null, txm: null, tnM: null, tnm: null, pM: null };
-  for (let i = 0; i < D.tmax.length; i++) {
-    if (Math.floor(S.md[i] / 100) !== cm) continue;
-    const upd = (slot, val, hi) => {
-      if (val === null) return slot;
-      if (!slot || (hi ? val > slot.v : val < slot.v)) return { v: val, i };
-      return slot;
-    };
-    cur.txM = upd(cur.txM, D.tmax[i], true);
-    cur.txm = upd(cur.txm, D.tmax[i], false);
-    cur.tnM = upd(cur.tnM, D.tmin[i], true);
-    cur.tnm = upd(cur.tnm, D.tmin[i], false);
-    cur.pM = upd(cur.pM, D.prec[i], true);
-  }
-  html += `<h4 style="margin-top:0.9rem">Récords de ${MESES[cm]}</h4>`;
-  if (cur.txM) html += `<div class="eph-row"><span class="eph-tmax">Tmax ↑</span><span class="mono">${cur.txM.v.toFixed(1)} °C · ${fd(cur.txM)}</span></div>`;
-  if (cur.txm) html += `<div class="eph-row"><span class="eph-tmax">Tmax ↓</span><span class="mono">${cur.txm.v.toFixed(1)} °C · ${fd(cur.txm)}</span></div>`;
-  if (cur.tnM) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↑</span><span class="mono">${cur.tnM.v.toFixed(1)} °C · ${fd(cur.tnM)}</span></div>`;
-  if (cur.tnm) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↓</span><span class="mono">${cur.tnm.v.toFixed(1)} °C · ${fd(cur.tnm)}</span></div>`;
-  if (cur.pM && cur.pM.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec 24 h ↑</span><span class="mono">${cur.pM.v.toFixed(1)} mm · ${fd(cur.pM)}</span></div>`;
-  if (wetMonth) html += `<div class="eph-row"><span class="eph-prec">Prec mes ↑</span><span class="mono">${wetMonth.sum.toFixed(1)} mm · ${wetMonth.yr}</span></div>`;
-  if (dryMonth) html += `<div class="eph-row"><span class="eph-prec">Prec mes ↓</span><span class="mono">${dryMonth.sum.toFixed(1)} mm · ${dryMonth.yr}</span></div>`;
-  html += `<h4 style="margin-top:0.9rem">Récords absolutos de la estación</h4>`;
-  if (abs.tmax) html += `<div class="eph-row"><span class="eph-tmax">Tmax ↑</span><span class="mono">${abs.tmax.v.toFixed(1)} °C · ${fd(abs.tmax)}</span></div>`;
-  if (abs.txm) html += `<div class="eph-row"><span class="eph-tmax">Tmax ↓</span><span class="mono">${abs.txm.v.toFixed(1)} °C · ${fd(abs.txm)}</span></div>`;
-  if (abs.tnM) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↑</span><span class="mono">${abs.tnM.v.toFixed(1)} °C · ${fd(abs.tnM)}</span></div>`;
-  if (abs.tmin) html += `<div class="eph-row"><span class="eph-tmin">Tmin ↓</span><span class="mono">${abs.tmin.v.toFixed(1)} °C · ${fd(abs.tmin)}</span></div>`;
-  if (abs.prec && abs.prec.v > 0) html += `<div class="eph-row"><span class="eph-prec">Prec 24 h ↑</span><span class="mono">${abs.prec.v.toFixed(1)} mm · ${fd(abs.prec)}</span></div>`;
-  if (wetYear) html += `<div class="eph-row"><span class="eph-prec">Prec año ↑</span><span class="mono">${wetYear.sum.toFixed(1)} mm · ${wetYear.yr}</span></div>`;
-  if (dryYear) html += `<div class="eph-row"><span class="eph-prec">Prec año ↓</span><span class="mono">${dryYear.sum.toFixed(1)} mm · ${dryYear.yr}</span></div>`;
-
-  box.innerHTML = html;
+  return {
+    todayMd, cm, day, mon, abs,
+    wetMonth: extTotal(monthTot, dInM, true), dryMonth: extTotal(monthTot, dInM, false),
+    wetYear: extTotal(yearTot, dInY, true), dryYear: extTotal(yearTot, dInY, false),
+  };
 }
+
+function renderEphemeris() {
+  const S = state.station;
+  if (!S) return;
+  const scope = state.recScope || "dia";
+  const R = computeRecords(S);
+  const y0 = S.yearList[0];
+
+  const niceDate = (i) => {
+    const md = S.md[i];
+    return `${md % 100} ${MESES[Math.floor(md / 100)]} ${S.years[i]}`;
+  };
+  const when = scope === "dia" ? (r) => `en ${S.years[r.i]}` : (r) => niceDate(r.i);
+  const set = { dia: R.day, mes: R.mon, abs: R.abs }[scope];
+
+  $("rec-title").innerHTML = {
+    dia: `Récords de un ${R.todayMd % 100} de ${MESES_LARGO[R.cm]}`,
+    mes: `Récords de ${MESES_LARGO[R.cm]}`,
+    abs: "Récords absolutos",
+  }[scope] + ` <span>· desde ${y0}</span>`;
+
+  const tiles = [];
+  const tile = (cls, label, val, unit, date) =>
+    tiles.push(`<div class="rec-tile ${cls}"><div class="rl">${label}</div>` +
+      `<div class="rv">${val}<small>${unit}</small></div><div class="rd">${date}</div></div>`);
+  if (set.txM) tile("t-tmax", "Máxima más alta", nf1(set.txM.v), "°C", when(set.txM));
+  if (set.txm) tile("t-tmax", "Máxima más baja", nf1(set.txm.v), "°C", when(set.txm));
+  if (set.tnM) tile("t-tmin", "Mínima más alta", nf1(set.tnM.v), "°C", when(set.tnM));
+  if (set.tnm) tile("t-tmin", "Mínima más baja", nf1(set.tnm.v), "°C", when(set.tnm));
+  if (set.pM && set.pM.v > 0) tile("t-prec", "Más lluvia en un día", nf1(set.pM.v), " mm", when(set.pM));
+  if (scope === "mes") {
+    if (R.wetMonth) tile("t-prec", `${cap(MESES_LARGO[R.cm])} más lluvioso`, nf1(R.wetMonth.sum), " mm", `en ${R.wetMonth.yr}`);
+    if (R.dryMonth) tile("t-prec", `${cap(MESES_LARGO[R.cm])} más seco`, nf1(R.dryMonth.sum), " mm", `en ${R.dryMonth.yr}`);
+  } else if (scope === "abs") {
+    if (R.wetYear) tile("t-prec", "Año más lluvioso", R.wetYear.sum.toFixed(0), " mm", `en ${R.wetYear.yr}`);
+    if (R.dryYear) tile("t-prec", "Año más seco", R.dryYear.sum.toFixed(0), " mm", `en ${R.dryYear.yr}`);
+  }
+  $("ephemeris").innerHTML = tiles.length ? tiles.join("")
+    : `<p class="rec-empty">Sin datos para esta fecha.</p>`;
+
+  // último dato de Tmax situado en el percentil de la referencia (md ±3)
+  const [refA, refB] = getRef();
+  const tmax = S.json.data.tmax;
+  let lastIdx = -1;
+  for (let i = tmax.length - 1; i >= 0; i--) if (tmax[i] !== null) { lastIdx = i; break; }
+  const box = $("last-obs");
+  box.hidden = true;
+  if (lastIdx >= 0 && S.md[lastIdx] !== 229) {
+    const clim = climDaily(tmax, refA, refB, 3);
+    const pool = clim.sorted.get(S.md[lastIdx]);
+    if (pool && pool.length > 20) {
+      let rank = 0;
+      for (const x of pool) if (x <= tmax[lastIdx]) rank++;
+      const pct = Math.round((100 * rank) / pool.length);
+      const verdict = pct >= 95 ? "excepcionalmente cálida 🔥" : pct >= 80 ? "más cálida de lo normal"
+        : pct <= 5 ? "excepcionalmente fría 🥶" : pct <= 20 ? "más fresca de lo normal" : "dentro de lo normal";
+      box.innerHTML = `Último dato (${niceDate(lastIdx)}): máxima de <b>${nf1(tmax[lastIdx])} °C</b>, ` +
+        `${verdict} — percentil ${pct} de ${refA}–${refB} para esas fechas.`;
+      box.hidden = false;
+    }
+  }
+}
+
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
 function populateYearSelects() {
   const years = [...state.station.yearList].reverse();
@@ -501,18 +587,34 @@ const TAB_RUNNERS = {};
 function setupTabs() {
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
       activateTab(btn.dataset.tab);
+      if (window.matchMedia("(max-width: 860px)").matches) {
+        btn.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+      }
     });
   });
 }
 
+function safeRun(fn) {
+  try { fn(); } catch (e) { console.error(e); }
+}
+
+/** Limpia gráficos y nota del panel (para no dejar restos de otra estación) y lo calcula. */
+function runPanel(name) {
+  const panel = $(`panel-${name}`);
+  panel.querySelectorAll(".plot").forEach((d) => { if (d.data) Plotly.purge(d); });
+  const note = panel.querySelector(".note");
+  if (note) note.textContent = "";
+  if (TAB_RUNNERS[name]) safeRun(TAB_RUNNERS[name]);
+}
+
 function activateTab(name) {
+  if (!state.station && name !== "nacional") return;
+  document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
   document.querySelectorAll(".panel").forEach((p) => { p.hidden = true; });
   $(`panel-${name}`).hidden = false;
-  if (name === "nacional") $("welcome").hidden = true;
-  if (TAB_RUNNERS[name] && (state.station || name === "nacional")) TAB_RUNNERS[name]();
+  updateHash();
+  runPanel(name);
 }
 
 // ==========================================================
@@ -576,9 +678,9 @@ function runAnio() {
     traces = [
       { x, y: p95, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
       { x, y: p05, mode: "lines", line: { width: 0 }, fill: "tonexty",
-        fillcolor: "rgba(139,148,158,0.22)", name: `P5–P95 ${refA}–${refB}`, hoverinfo: "skip" },
+        fillcolor: TH.band, name: `P5–P95 ${refA}–${refB}`, hoverinfo: "skip" },
       { x, y: p50, mode: "lines", name: `mediana ${refA}–${refB}`,
-        line: { color: "#8b949e", width: 1.5, dash: "dash" }, hovertemplate: ht + "<extra>mediana</extra>" },
+        line: { color: TH.muted, width: 1.5, dash: "dash" }, hovertemplate: ht + "<extra>mediana</extra>" },
     ];
     if (recMax && recMax.y !== year) traces.push({ x, y: recMax.t, mode: "lines",
       name: `récord húmedo (${recMax.y})`, line: { color: VAR_COLORS.tmin, width: 1 },
@@ -624,9 +726,9 @@ function runAnio() {
         hovertemplate: ht + "<extra>récord bajo</extra>" },
       { x, y: p95, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
       { x, y: p05, mode: "lines", line: { width: 0 }, fill: "tonexty",
-        fillcolor: "rgba(139,148,158,0.25)", name: `P5–P95 ${refA}–${refB}`, hoverinfo: "skip" },
+        fillcolor: TH.band, name: `P5–P95 ${refA}–${refB}`, hoverinfo: "skip" },
       { x, y: p50, mode: "lines", name: `mediana ${refA}–${refB}`,
-        line: { color: "#8b949e", width: 1.5, dash: "dash" }, hovertemplate: ht + "<extra>mediana</extra>" },
+        line: { color: TH.muted, width: 1.5, dash: "dash" }, hovertemplate: ht + "<extra>mediana</extra>" },
     ];
     if (sel) traces.push({ x, y: sel, mode: "lines", name: String(year),
       line: { color: ACCENT, width: 1.8 }, connectgaps: false,
@@ -724,7 +826,7 @@ function runEvolution() {
   l2.legend = { orientation: "h", y: -0.18 };
   l2.showlegend = vars.length > 1;
   l2.shapes = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 0, y1: 0,
-    line: { color: "#8b949e", width: 1 } }];
+    line: { color: TH.muted, width: 1 } }];
   Plotly.newPlot("plot-evolucion-anom", anomTraces, l2, PLOTLY_CFG);
 
   $("ev-note").textContent =
@@ -796,7 +898,7 @@ function runStripes() {
   l2.yaxis.title = { text: isPrec ? "% de la normal" : "anomalía (°C)" };
   l2.legend = { orientation: "h", y: -0.18 };
   if (isPrec) l2.shapes = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 100, y1: 100,
-    line: { color: "#8b949e", dash: "dash", width: 1 } }];
+    line: { color: TH.muted, dash: "dash", width: 1 } }];
   const anomTraces = [{
     x: allYears, y: anoms, type: "bar", name: "anomalía", showlegend: false,
     marker: { color: anoms, colorscale: cscale, reversescale: false,
@@ -815,7 +917,7 @@ function runStripes() {
         x: [vx[0], vx[vx.length - 1]],
         y: [fit.a + fit.b * vx[0], fit.a + fit.b * vx[vx.length - 1]],
         mode: "lines", name: "tendencia",
-        line: { color: "#e6edf3", width: 2, dash: "dot" }, hoverinfo: "skip",
+        line: { color: TH.fg, width: 2, dash: "dot" }, hoverinfo: "skip",
       });
       trendTxt = ` Tendencia: ${(fit.b * 10 >= 0 ? "+" : "")}${(fit.b * 10).toFixed(2)} ` +
         `${isPrec ? "puntos%" : "°C"}/década (OLS, orientativa).`;
@@ -834,7 +936,7 @@ function runStripes() {
     }
     anomTraces.push({
       x: mx, y: my, mode: "lines", name: `media móvil ${win}a`,
-      line: { color: "#f7c948", width: 2.5 },
+      line: { color: VAR_COLORS.tmed, width: 2.5 },
       hovertemplate: isPrec ? "%{x}: %{y:.0f}%<extra>móvil " + win + "a</extra>"
                             : "%{x}: %{y:+.2f} °C<extra>móvil " + win + "a</extra>",
     });
@@ -931,7 +1033,7 @@ function runIndices() {
     traces.push({
       x: [xs[0], xs[xs.length - 1]],
       y: [fit.a + fit.b * xs[0], fit.a + fit.b * xs[xs.length - 1]],
-      mode: "lines", line: { color: "#e6edf3", width: 1.5, dash: "dot" },
+      mode: "lines", line: { color: TH.fg, width: 1.5, dash: "dot" },
       hoverinfo: "skip", showlegend: false,
     });
     slopeTxt = ` Tendencia lineal: ${(fit.b * 10).toFixed(1)} ${isDate || def.type === "duration" ? "días" : "días"}/década.`;
@@ -1230,15 +1332,15 @@ function runComparator() {
     x: rest.map((r) => r.x), y: rest.map((r) => r.y),
     mode: "markers", text: rest.map((r) => String(r.yr)),
     marker: { color: rest.map((r) => r.yr), colorscale: "Plasma", size: 10,
-              line: { color: "#0d1117", width: 1 },
-              colorbar: { title: "Año", thickness: 14, outlinecolor: "#2b3340" } },
+              line: { color: TH.card, width: 1 },
+              colorbar: { title: "Año", thickness: 14, outlinecolor: TH.grid } },
     hovertemplate: "%{text}<br>" + VAR_LABELS[vx] + ": %{x:.2f} °C<br>" +
                    VAR_LABELS[vy] + ": %{y:.2f} °C<extra></extra>",
   }];
   if (ref) traces.push({
     x: [ref.x], y: [ref.y], mode: "markers+text",
     text: [String(refYear)], textposition: "top right",
-    textfont: { color: ACCENT, size: 15, family: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif" },
+    textfont: { color: ACCENT, size: 15, family: FONT },
     marker: { color: ACCENT, size: 16, line: { color: "#fff", width: 1.5 } },
     hovertemplate: refYear + "<br>%{x:.2f} °C · %{y:.2f} °C<extra></extra>",
   });
@@ -1252,9 +1354,9 @@ function runComparator() {
     const mx = med(rest.map((r) => r.x)), my = med(rest.map((r) => r.y));
     layout.shapes = [
       { type: "line", x0: mx, x1: mx, yref: "paper", y0: 0, y1: 1,
-        line: { color: "#2b3340", dash: "dash", width: 1 } },
+        line: { color: TH.grid, dash: "dash", width: 1 } },
       { type: "line", y0: my, y1: my, xref: "paper", x0: 0, x1: 1,
-        line: { color: "#2b3340", dash: "dash", width: 1 } },
+        line: { color: TH.grid, dash: "dash", width: 1 } },
     ];
   }
   Plotly.newPlot("plot-comparador", traces, layout, PLOTLY_CFG);
@@ -1312,16 +1414,16 @@ function runDistribution() {
   if (mode === "hist") {
     traces = [
       { x: da, type: "histogram", histnorm: "probability", name: nameA,
-        marker: { color: "rgba(77,171,247,0.55)" }, xbins: { size: 1 } },
+        marker: { color: VAR_COLORS.tmin }, opacity: 0.55, xbins: { size: 1 } },
       { x: db, type: "histogram", histnorm: "probability", name: nameB,
-        marker: { color: "rgba(255,122,69,0.55)" }, xbins: { size: 1 } },
+        marker: { color: VAR_COLORS.tmax }, opacity: 0.55, xbins: { size: 1 } },
     ];
   } else {
     const ecdf = (d) => ({ x: d, y: d.map((_, i) => (i + 1) / d.length) });
     const ea = ecdf(da), eb = ecdf(db);
     traces = [
-      { ...ea, mode: "lines", name: nameA, line: { color: "#4dabf7", width: 2 } },
-      { ...eb, mode: "lines", name: nameB, line: { color: "#ff7a45", width: 2 } },
+      { ...ea, mode: "lines", name: nameA, line: { color: VAR_COLORS.tmin, width: 2 } },
+      { ...eb, mode: "lines", name: nameB, line: { color: VAR_COLORS.tmax, width: 2 } },
     ];
   }
 
@@ -1393,7 +1495,7 @@ function runCalendar() {
     zmin: modeAnom ? -amax : undefined, zmax: modeAnom ? amax : undefined,
     zmid: modeAnom ? 0 : undefined,
     hovertemplate: "%{text}<extra></extra>",
-    colorbar: { title: "°C", thickness: 14, outlinecolor: "#2b3340" },
+    colorbar: { title: "°C", thickness: 14, outlinecolor: TH.grid },
     hoverongaps: false,
   }], layout, PLOTLY_CFG);
   $("ca-note").textContent = modeAnom
@@ -1478,14 +1580,14 @@ function runWaves() {
   const layout = baseLayout(`${S.json.name} · olas de ${calor ? "calor" : "frío"} · ${defTxt}`);
   layout.yaxis.title = { text: "días en ola / año" };
   layout.yaxis2 = { overlaying: "y", side: "right", title: { text: "nº de olas" },
-                    gridcolor: "rgba(0,0,0,0)", zerolinecolor: "#2b3340", rangemode: "tozero" };
+                    gridcolor: "rgba(0,0,0,0)", zerolinecolor: TH.grid, rangemode: "tozero" };
   layout.legend = { orientation: "h", y: -0.12 };
   Plotly.newPlot("plot-olas", [
     { x: yrs, y: dias, type: "bar", name: "días en ola",
       marker: { color: dias, colorscale: calor ? "Reds" : "Blues" },
       hovertemplate: "%{x}: %{y} días<extra></extra>" },
     { x: yrs, y: olas, yaxis: "y2", mode: "lines+markers", name: "nº de olas",
-      line: { color: "#e6edf3", width: 1 }, marker: { size: 4 },
+      line: { color: TH.fg, width: 1 }, marker: { size: 4 },
       hovertemplate: "%{x}: %{y} olas<extra></extra>" },
   ], layout, PLOTLY_CFG);
 
@@ -1521,7 +1623,7 @@ function runWaves() {
       x: xc, y: Array.from({ length: nY }, (_, k) => y0c + k), z,
       type: "heatmap", colorscale: calor ? "Reds" : "Blues",
       text: txtc, hovertemplate: "%{text}<extra></extra>", hoverongaps: false,
-      colorbar: { title: "°C", thickness: 14, outlinecolor: "#2b3340" },
+      colorbar: { title: "°C", thickness: 14, outlinecolor: TH.grid },
       zmin: 0,
     }], lc, PLOTLY_CFG);
   }
@@ -1582,7 +1684,7 @@ function runRecords() {
   layout.legend = { orientation: "h", y: -0.12 };
   layout.annotations = decades.map((d, i) => ({
     x: labels[i], y: Math.max(w[i], c[i]), yshift: 14, showarrow: false,
-    text: `${ratio[i]}:1`, font: { size: 11, color: "#8b949e" },
+    text: `${ratio[i]}:1`, font: { size: 11, color: TH.muted },
   }));
   Plotly.newPlot("plot-records", [
     { x: labels, y: w, type: "bar", name: "récords cálidos (Tmax)",
@@ -1703,7 +1805,7 @@ function runPeriodos() {
     hovertemplate: "%{text}: %{y:.1f}<extra>" + P.label + "</extra>",
   });
   Plotly.newPlot("plot-periodos",
-    [mk(sa, A, "#4dabf7"), mk(sb, B, "#ff7a45")], layout, PLOTLY_CFG);
+    [mk(sa, A, VAR_COLORS.tmin), mk(sb, B, VAR_COLORS.tmax)], layout, PLOTLY_CFG);
 
   const d = (x) => x.toFixed(1);
   $("pe-note").textContent = isPrec
@@ -1787,7 +1889,7 @@ async function runNacional() {
                     gridcolor: "rgba(0,0,0,0)", rangemode: "tozero" };
   layout.legend = { orientation: "h", y: -0.12 };
   if (isPrec) layout.shapes = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 100, y1: 100,
-    line: { color: "#8b949e", dash: "dash", width: 1 } }];
+    line: { color: TH.muted, dash: "dash", width: 1 } }];
   const traces = [
     { x: xs, y: ys, type: "bar", name: isPrec ? "% normal" : "anomalía",
       marker: { color: ys.map((y) => isPrec ? y - 100 : y),
@@ -1796,7 +1898,7 @@ async function runNacional() {
                 cmin: -amax, cmax: amax },
       hovertemplate: "%{x}: %{y:.1f}<extra></extra>" },
     { x: xs, y: ns, yaxis: "y2", mode: "lines", name: "nº estaciones",
-      line: { color: "#8b949e", width: 1 }, hovertemplate: "%{x}: %{y} est.<extra></extra>" },
+      line: { color: TH.muted, width: 1 }, hovertemplate: "%{x}: %{y} est.<extra></extra>" },
   ];
   let trendTxt = "";
   if (!isPrec) {
@@ -1804,7 +1906,7 @@ async function runNacional() {
     if (fit) {
       traces.push({ x: [xs[0], xs[xs.length - 1]],
         y: [fit.a + fit.b * xs[0], fit.a + fit.b * xs[xs.length - 1]],
-        mode: "lines", line: { color: "#e6edf3", width: 1.5, dash: "dot" },
+        mode: "lines", line: { color: TH.fg, width: 1.5, dash: "dot" },
         hoverinfo: "skip", showlegend: false });
       trendTxt = ` Tendencia: ${(fit.b * 10 >= 0 ? "+" : "")}${(fit.b * 10).toFixed(2)} °C/década (OLS, orientativa).`;
     }
@@ -1824,7 +1926,7 @@ async function runNacional() {
 
 async function runDuel() {
   if (!state.stationB) {
-    $("du-note").textContent = "Elige la segunda estación en el buscador de arriba.";
+    $("du-note").textContent = "Elige la segunda estación en el buscador de este panel.";
     return;
   }
   const A = state.station, B = state.stationB;
@@ -1875,7 +1977,7 @@ async function runDuel() {
     traces2.push({
       x: [common[0], common[common.length - 1]],
       y: [fit.a + fit.b * common[0], fit.a + fit.b * common[common.length - 1]],
-      mode: "lines", line: { color: "#e6edf3", width: 1.5, dash: "dot" }, hoverinfo: "skip",
+      mode: "lines", line: { color: TH.fg, width: 1.5, dash: "dot" }, hoverinfo: "skip",
     });
     trendTxt = ` Tendencia de la diferencia: ${(fit.b * 10>= 0 ? "+" : "")}${(fit.b * 10).toFixed(2)} °C/década (OLS, orientativa).`;
   }
@@ -1916,15 +2018,15 @@ async function exportActivePanel() {
       const layout = JSON.parse(JSON.stringify(div.layout));
       layout.width = w; layout.height = hgt;
       layout.font = { ...(layout.font || {}), size: 22 };
-      if (layout.title) layout.title.font = { family: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", size: 32 };
+      if (layout.title) layout.title.font = { family: FONT, size: 32 };
       layout.margin = { l: 100, r: 70, t: layout.title ? 110 : 60, b: 150 };
       layout.annotations = (layout.annotations || []).concat([
         { text: "<b>@MeteoZGZ</b>", xref: "paper", yref: "paper", x: 0, y: 0,
           xanchor: "left", yshift: -110, showarrow: false,
-          font: { size: 26, color: "#e6edf3" } },
+          font: { size: 26, color: TH.fg } },
         { text: "Datos: AEMET OpenData · ccalvosa.github.io/aemet-explorer",
           xref: "paper", yref: "paper", x: 1, y: 0, xanchor: "right", yshift: -110,
-          showarrow: false, font: { size: 17, color: "#8b949e" } },
+          showarrow: false, font: { size: 17, color: TH.muted } },
       ]);
       const url = await Plotly.toImage({ data, layout }, {
         format: "png", width: w, height: hgt, scale: 2 });
@@ -1934,7 +2036,7 @@ async function exportActivePanel() {
       a.click();
     }
   } finally {
-    btn.disabled = false; btn.textContent = "PNG ↓";
+    btn.disabled = false; btn.textContent = "⤓ PNG";
   }
 }
 
@@ -1949,36 +2051,88 @@ Object.assign(TAB_RUNNERS, {
   distribucion: runDistribution, calendario: runCalendar, duelo: runDuel,
 });
 
-function bindControls() {
-  const runs = { "an-run": runAnio, "ev-run": runEvolution, "st-run": runStripes,
-                 "ix-run": runIndices, "ra-run": runStreaks, "co-run": runComparator,
-                 "di-run": runDistribution, "ca-run": runCalendar, "du-run": runDuel,
-                 "ol-run": runWaves, "re-run": runRecords,
-                 "pe-run": runPeriodos, "na-run": runNacional };
-  for (const [id, fn] of Object.entries(runs)) $(id).addEventListener("click", fn);
+const QUICK_PICKS = [
+  ["3195", "Madrid Retiro"], ["0076", "Barcelona"], ["8416", "València"], ["5783", "Sevilla"],
+  ["9434", "Zaragoza"], ["1082", "Bilbao"], ["6155A", "Málaga"], ["1387", "A Coruña"],
+  ["2422", "Valladolid"], ["7178I", "Murcia"], ["B228", "Palma"], ["C447A", "Tenerife Norte"],
+];
 
-  for (const [slider, out] of [["ev-cov", "ev-cov-val"], ["co-cov", "co-cov-val"],
-                               ["st-cov", "st-cov-val"], ["ix-cov", "ix-cov-val"]]) {
-    $(slider).addEventListener("input", () => { $(out).textContent = `${$(slider).value}%`; });
+function renderQuickPicks() {
+  const box = $("quick-picks");
+  const ids = new Set(state.index.stations.map((s) => s.id));
+  for (const [id, label] of QUICK_PICKS) {
+    if (!ids.has(id)) continue;
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = label;
+    b.addEventListener("click", () => selectStation(id));
+    box.appendChild(b);
   }
-  $("re-skip").addEventListener("input", () => { $("re-skip-val").textContent = $("re-skip").value; });
-  $("na-min").addEventListener("input", () => { $("na-min-val").textContent = $("na-min").value; });
+}
+
+/** Recalcula automáticamente al cambiar cualquier control del panel. */
+function bindControls() {
   $("pe-tipo").addEventListener("change", populatePeriodSubs);
   populatePeriodSubs();
-  $("ra-modo").addEventListener("change", runStreaks);
   $("ra-var").addEventListener("change", () => {
     $("ra-unit").textContent = VAR_UNITS[$("ra-var").value];
   });
-  $("an-var").addEventListener("change", () => {
-    $("an-hydro-wrap").hidden = $("an-var").value !== "prec";
-  });
-  for (const id of ["ref-start", "ref-end"]) {
-    $(id).addEventListener("change", () => {
-      if (!state.station) return;
-      renderEphemeris();
-      activateTab(document.querySelector(".tab.active").dataset.tab);
+  for (const [slider, out, suffix] of [["ev-cov", "ev-cov-val", "%"], ["co-cov", "co-cov-val", "%"],
+                                       ["st-cov", "st-cov-val", "%"], ["ix-cov", "ix-cov-val", "%"],
+                                       ["re-skip", "re-skip-val", ""], ["na-min", "na-min-val", ""]]) {
+    $(slider).addEventListener("input", () => { $(out).textContent = `${$(slider).value}${suffix}`; });
+  }
+  for (const name of Object.keys(TAB_RUNNERS)) {
+    $(`panel-${name}`).querySelectorAll(".controls select, .controls input").forEach((el) => {
+      if (el.id === "du-search") return;
+      el.addEventListener("change", () => {
+        if (state.station || name === "nacional") runPanel(name);
+      });
     });
   }
+  for (const id of ["ref-start", "ref-end"]) {
+    $(id).addEventListener("change", () => {
+      if ($("app").hidden) return;
+      if (state.station) renderEphemeris();
+      activateTab(currentTab());
+    });
+  }
+  $("rec-scope").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    state.recScope = b.dataset.scope;
+    $("rec-scope").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+    renderEphemeris();
+  });
+}
+
+function applyTheme() {
+  refreshTheme();
+  const meta = document.querySelectorAll('meta[name="theme-color"]');
+  meta.forEach((m) => m.setAttribute("content", TH.bg));
+  if ($("app").hidden) return;
+  if (state.station) renderPlate();
+  activateTab(currentTab());
+}
+
+function bindTheme() {
+  $("theme-toggle").addEventListener("click", () => {
+    const next = isDark() ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("theme", next); } catch { /* sin almacenamiento */ }
+    applyTheme();
+  });
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if (!document.documentElement.dataset.theme) applyTheme();
+  });
+}
+
+function bindKeys() {
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "/" || e.target.matches("input, select, textarea")) return;
+    e.preventDefault();
+    ($("app").hidden ? $("hero-search") : $("station-search")).focus();
+  });
 }
 
 function bindExport() {
@@ -1986,25 +2140,37 @@ function bindExport() {
 }
 
 async function init() {
+  refreshTheme();
+  bindTheme();
   bindExport();
   setupTabs();
   bindControls();
+  bindKeys();
   populateIndices();
   try {
     await loadIndex();
-    document.querySelector(".tagline").textContent =
-      `Series diarias · ${state.index.n_stations} estaciones · análisis en tu navegador`;
-    makeSearch($("station-search"), $("search-results"), selectStation);
-    $("tabs").hidden = false;
-    makeSearch($("du-search"), $("du-results"), async (id) => {
-      state.stationB = await loadStation(id);
-      runDuel();
-    });
   } catch {
-    $("sidebar-empty").innerHTML =
-      "<p>No se pudo cargar <span class='mono'>data/index.json</span>. " +
-      "Ejecuta <span class='mono'>scripts/build_data.py</span> y sirve la web desde la raíz del repo.</p>";
+    $("hero-badge").textContent = "No se pudo cargar data/index.json";
+    return;
   }
+  const lastEnd = state.index.stations.reduce((m, s) => (s.end > m ? s.end : m), "");
+  $("hero-badge").textContent =
+    `${state.index.n_stations} estaciones · datos diarios de AEMET hasta ${lastEnd.slice(0, 4)}`;
+  makeSearch($("hero-search"), $("hero-results"), (id) => selectStation(id));
+  makeSearch($("station-search"), $("search-results"), (id) => selectStation(id));
+  makeSearch($("du-search"), $("du-results"), async (id) => {
+    showLoader("Cargando segunda estación…");
+    try { state.stationB = await loadStation(id); } finally { hideLoader(); }
+    $("du-search").placeholder = `Comparando con: ${state.stationB.json.name}`;
+    runDuel();
+  });
+  $("go-national").addEventListener("click", goNational);
+  renderQuickPicks();
+  routeFromHash();
+  window.addEventListener("hashchange", () => {
+    const id = state.station ? state.station.json.id : "espana";
+    if (!location.hash.startsWith(`#${encodeURIComponent(id)}/`)) routeFromHash();
+  });
 }
 
 init();

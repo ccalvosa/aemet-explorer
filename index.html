@@ -4,99 +4,143 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Explorador climático AEMET</title>
-<meta name="description" content="Análisis interactivo de series diarias de estaciones de AEMET: evolución, rachas, stripes, índices climáticos, comparadores y más.">
-<link rel="stylesheet" href="css/style.css?v=33">
+<meta name="description" content="El clima de 920 estaciones de AEMET, día a día: récords, año en curso, warming stripes, rachas, olas de calor, comparadores y más.">
+<meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3CclipPath id='c'%3E%3Crect width='32' height='32' rx='8'/%3E%3C/clipPath%3E%3Cg clip-path='url(%23c)'%3E%3Crect width='7' height='32' fill='%231c7ed6'/%3E%3Crect x='6.4' width='7' height='32' fill='%2374c0fc'/%3E%3Crect x='12.8' width='7' height='32' fill='%23ffd8a8'/%3E%3Crect x='19.2' width='7' height='32' fill='%23ff8787'/%3E%3Crect x='25.6' width='7' height='32' fill='%23e03131'/%3E%3C/g%3E%3C/svg%3E">
+<script>
+  // tema antes de pintar para evitar parpadeo
+  try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?v=40">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
 
 <header class="topbar">
-  <div class="brand">
-    <span class="brand-mark">▲</span>
-    <h1>Explorador climático <span class="brand-accent">AEMET</span></h1>
+  <a class="brand" href="./" title="Inicio">
+    <svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true">
+      <clipPath id="logo-clip"><rect width="32" height="32" rx="8"/></clipPath>
+      <g clip-path="url(#logo-clip)">
+        <rect x="0" width="7" height="32" fill="#1c7ed6"/>
+        <rect x="6.4" width="7" height="32" fill="#74c0fc"/>
+        <rect x="12.8" width="7" height="32" fill="#ffd8a8"/>
+        <rect x="19.2" width="7" height="32" fill="#ff8787"/>
+        <rect x="25.6" width="7" height="32" fill="#e03131"/>
+      </g>
+    </svg>
+    <span class="brand-text">Explorador climático</span>
+    <small>AEMET</small>
+  </a>
+
+  <div class="search-box top-search" id="top-search" hidden>
+    <input type="text" id="station-search" class="search-input" placeholder="Buscar otra estación…  ( / )"
+           autocomplete="off" spellcheck="false" aria-label="Buscar estación">
+    <ul id="search-results" class="search-results" hidden></ul>
   </div>
-  <p class="tagline">Series diarias · análisis en tu navegador</p>
-  <div class="ref-box-top">
-    <span class="field-label">Referencia</span>
-    <div class="inline">
-      <input type="number" id="ref-start" class="mono yr-input" value="1991" min="1900" max="2100">
-      <span class="sep">–</span>
-      <input type="number" id="ref-end" class="mono yr-input" value="2020" min="1900" max="2100">
-    </div>
+
+  <div class="top-actions">
+    <label class="ref-pill" title="Período normal de referencia para anomalías, percentiles y bandas">
+      <span class="lbl">Normal</span>
+      <input type="number" id="ref-start" class="num" value="1991" min="1900" max="2100" aria-label="Inicio del período normal">
+      <span>–</span>
+      <input type="number" id="ref-end" class="num" value="2020" min="1900" max="2100" aria-label="Fin del período normal">
+    </label>
+    <button id="theme-toggle" class="icon-btn" title="Cambiar tema claro / oscuro" aria-label="Cambiar tema">◐</button>
   </div>
 </header>
 
-<div class="layout">
+<!-- ============ BIENVENIDA ============ -->
+<section id="welcome" class="hero">
+  <span class="hero-badge" id="hero-badge">920 estaciones · datos diarios de AEMET</span>
+  <h1>El clima de tu ciudad,<br><em>día a día, desde hace un siglo</em></h1>
+  <p class="hero-sub">Busca una estación y descubre sus récords, cómo va este año frente a lo normal y cuánto ha cambiado el clima allí.</p>
 
-  <!-- ============ SIDEBAR ============ -->
-  <aside class="sidebar">
-    <section class="search-box">
-      <label for="station-search" class="field-label">Estación</label>
-      <input type="text" id="station-search" placeholder="Nombre, provincia o indicativo…"
-             autocomplete="off" spellcheck="false">
-      <ul id="search-results" class="search-results" hidden></ul>
-    </section>
+  <div class="search-box hero-search">
+    <input type="text" id="hero-search" class="search-input" placeholder="Escribe una ciudad, provincia o indicativo…"
+           autocomplete="off" spellcheck="false" aria-label="Buscar estación">
+    <ul id="hero-results" class="search-results" hidden></ul>
+  </div>
 
+  <div class="quick-picks" id="quick-picks"></div>
 
-    <section id="station-plate" class="station-plate" hidden>
-      <div class="plate-head">
-        <span id="plate-id" class="plate-id mono"></span>
-        <span id="plate-alt" class="plate-alt mono"></span>
-      </div>
+  <div class="feature-grid">
+    <div class="feature"><div class="feature-ico">📅</div><h3>Este año</h3><p>Cada día frente a la normal y los récords. Calendario de anomalías.</p></div>
+    <div class="feature"><div class="feature-ico">📈</div><h3>Tendencias</h3><p>Evolución anual, warming stripes, noches tropicales, heladas…</p></div>
+    <div class="feature"><div class="feature-ico">🔥</div><h3>Extremos</h3><p>Rachas, olas de calor y de frío, períodos secos y distribuciones.</p></div>
+    <div class="feature"><div class="feature-ico">⚖️</div><h3>Comparar</h3><p>Años entre sí, dos estaciones frente a frente o toda España.</p></div>
+  </div>
+
+  <p class="hero-alt">¿Prefieres la visión general? <button class="link-btn" id="go-national">Ver la evolución de toda España →</button></p>
+  <p class="hero-alt" style="margin-top:0.4rem">Todo se calcula en tu navegador. Ningún dato sale de esta página.</p>
+</section>
+
+<!-- ============ ESTACIÓN ============ -->
+<div id="app" class="app" hidden>
+
+  <section id="station-plate" class="station-hero card" hidden>
+    <div>
+      <p class="eyebrow" id="plate-province"></p>
       <h2 id="plate-name" class="plate-name"></h2>
-      <p id="plate-province" class="plate-province"></p>
-      <p id="plate-period" class="plate-period mono"></p>
-
-      <div class="coverage-block">
-        <p class="field-label">Cobertura por variable</p>
-        <div id="coverage-strips"></div>
-        <p class="coverage-legend">cada franja: % de días con dato por año</p>
+      <div class="plate-meta">
+        <span class="tag" id="plate-id"></span>
+        <span class="tag" id="plate-alt"></span>
+        <span class="tag" id="plate-period"></span>
       </div>
-
-      <div id="ephemeris" class="ephemeris"></div>
-    </section>
-
-    <section id="sidebar-empty" class="sidebar-empty">
-      <p>Busca una estación para empezar.</p>
-      <p class="hint">Prueba «Zaragoza», «Retiro» o un indicativo como <span class="mono">9434</span>.</p>
-    </section>
-
-    <footer class="sidebar-foot">
-      <p>Datos: <a href="https://opendata.aemet.es" target="_blank" rel="noopener">AEMET OpenData</a> · reutilización con atribución</p>
-      <p>Hecho por <a href="https://x.com/MeteoZGZ" target="_blank" rel="noopener">@MeteoZGZ</a></p>
-    </footer>
-  </aside>
-
-  <!-- ============ MAIN ============ -->
-  <main class="main">
-
-    <nav class="tabs" id="tabs" hidden>
-      <button class="tab active" data-tab="anio">Año en curso</button>
-      <button class="tab" data-tab="evolucion">Evolución</button>
-      <button class="tab" data-tab="stripes">Stripes</button>
-      <button class="tab" data-tab="indices">Índices</button>
-      <button class="tab" data-tab="rachas">Rachas</button>
-      <button class="tab" data-tab="comparador">Comparador</button>
-      <button class="tab" data-tab="distribucion">Distribución</button>
-      <button class="tab" data-tab="calendario">Calendario</button>
-      <button class="tab" data-tab="olas">Olas</button>
-      <button class="tab" data-tab="periodos">Comparar períodos</button>
-      <button class="tab" data-tab="nacional">Nacional</button>
-      <button class="tab" data-tab="records">Récords</button>
-      <button class="tab" data-tab="duelo">Dos estaciones</button>
-      <button id="export-png" class="btn btn-export" title="Exportar los gráficos de esta pestaña como PNG para redes">PNG ↓</button>
-    </nav>
-
-    <div id="welcome" class="welcome">
-      <h2>Un laboratorio de series climáticas</h2>
-      <p>Elige una estación y explora su registro completo: el año en curso frente a la
-         climatología, warming stripes, índices climáticos, rachas, distribuciones por
-         períodos y comparadores entre años y entre estaciones.</p>
-      <p class="hint">Todo el cálculo ocurre en tu navegador. Ningún dato sale de esta página.</p>
+      <p id="last-obs" class="last-obs" hidden></p>
+      <details class="coverage-block">
+        <summary>Datos disponibles por año</summary>
+        <div id="coverage-strips"></div>
+        <p class="coverage-legend">Cada franja es un año: más intensa, más días con dato.</p>
+      </details>
     </div>
 
+    <div>
+      <div class="rec-head">
+        <h3 id="rec-title">Récords</h3>
+        <div class="seg" id="rec-scope" role="tablist">
+          <button data-scope="dia" class="on">Hoy</button>
+          <button data-scope="mes">Este mes</button>
+          <button data-scope="abs">Siempre</button>
+        </div>
+      </div>
+      <div id="ephemeris" class="rec-grid"></div>
+    </div>
+  </section>
+
+  <div class="workspace">
+    <nav class="tabs" id="tabs" aria-label="Análisis">
+      <div class="nav-group">Este año</div>
+      <button class="tab active" data-tab="anio"><span class="ico">📅</span>Año en curso</button>
+      <button class="tab" data-tab="calendario"><span class="ico">🗓️</span>Calendario</button>
+      <button class="tab" data-tab="periodos"><span class="ico">↔️</span>Comparar períodos</button>
+
+      <div class="nav-group">Tendencias</div>
+      <button class="tab" data-tab="evolucion"><span class="ico">📈</span>Evolución</button>
+      <button class="tab" data-tab="stripes"><span class="ico">🌡️</span>Warming stripes</button>
+      <button class="tab" data-tab="indices"><span class="ico">🌙</span>Índices</button>
+      <button class="tab" data-tab="records"><span class="ico">🏆</span>Récords por década</button>
+
+      <div class="nav-group">Extremos</div>
+      <button class="tab" data-tab="rachas"><span class="ico">⛓️</span>Rachas</button>
+      <button class="tab" data-tab="olas"><span class="ico">🔥</span>Olas de calor y frío</button>
+      <button class="tab" data-tab="distribucion"><span class="ico">📊</span>Distribución</button>
+
+      <div class="nav-group">Comparar</div>
+      <button class="tab" data-tab="comparador"><span class="ico">🎯</span>Comparador de años</button>
+      <button class="tab" data-tab="duelo"><span class="ico">⚖️</span>Dos estaciones</button>
+      <button class="tab" data-tab="nacional"><span class="ico">🇪🇸</span>España</button>
+    </nav>
+
+    <main class="main">
+      <button id="export-png" class="btn-export" title="Descargar los gráficos de esta sección como PNG, listos para redes">⤓ PNG</button>
+
     <!-- ---- TAB: AÑO EN CURSO ---- -->
-    <section id="panel-anio" class="panel" hidden>
+    <section id="panel-anio" class="panel card" hidden>
+      <header class="panel-head"><h2>Año en curso</h2><p>Cada día del año frente a lo normal. La banda gris es el rango habitual (P5–P95) del período normal; las líneas punteadas, los récords previos a ese año.</p></header>
       <div class="controls">
         <div class="control">
           <label class="field-label" for="an-var">Variable</label>
@@ -114,14 +158,14 @@
         <div class="control" id="an-hydro-wrap" hidden>
           <label class="chk"><input type="checkbox" id="an-hydro"> Año hidrológico (oct–sep)</label>
         </div>
-        <button id="an-run" class="btn">Calcular</button>
       </div>
       <div id="plot-anio" class="plot"></div>
       <p id="an-note" class="note"></p>
     </section>
 
     <!-- ---- TAB: EVOLUCIÓN ---- -->
-    <section id="panel-evolucion" class="panel" hidden>
+    <section id="panel-evolucion" class="panel card" hidden>
+      <header class="panel-head"><h2>Evolución</h2><p>La media de cada año (o de las fechas que elijas) y cuánto se aleja del período normal.</p></header>
       <div class="controls">
         <div class="control">
           <span class="field-label">Variables</span>
@@ -147,7 +191,6 @@
         <div class="control">
           <label class="chk"><input type="checkbox" id="ev-smooth" checked> Media móvil 10 años</label>
         </div>
-        <button id="ev-run" class="btn">Calcular</button>
       </div>
       <div id="plot-evolucion" class="plot"></div>
       <h3 class="block-title">Anomalía respecto al período de referencia</h3>
@@ -156,7 +199,8 @@
     </section>
 
     <!-- ---- TAB: STRIPES ---- -->
-    <section id="panel-stripes" class="panel" hidden>
+    <section id="panel-stripes" class="panel card" hidden>
+      <header class="panel-head"><h2>Warming stripes</h2><p>Una franja por año: azul si fue más fresco de lo normal, roja si fue más cálido. Debajo, la anomalía con su tendencia.</p></header>
       <div class="controls">
         <div class="control">
           <label class="field-label" for="st-var">Variable</label>
@@ -182,10 +226,9 @@
         </div>
         <div class="control">
           <label class="chk"><input type="checkbox" id="st-trend" checked> Tendencia lineal</label>
-          <label class="chk" style="margin-top:0.3rem"><input type="checkbox" id="st-ma"> Media móvil
+          <label class="chk"><input type="checkbox" id="st-ma"> Media móvil
             <input type="number" id="st-ma-win" class="mono" value="10" min="2" max="50" style="width:3.4rem;margin-left:0.3rem"> años</label>
         </div>
-        <button id="st-run" class="btn">Calcular</button>
       </div>
       <div id="plot-stripes" class="plot plot-stripes"></div>
       <div id="plot-stripes-anom" class="plot plot-half"></div>
@@ -193,7 +236,8 @@
     </section>
 
     <!-- ---- TAB: ÍNDICES ---- -->
-    <section id="panel-indices" class="panel" hidden>
+    <section id="panel-indices" class="panel card" hidden>
+      <header class="panel-head"><h2>Índices climáticos</h2><p>Noches tropicales, heladas, primer día de 35 °C, duración del verano… y cómo han cambiado año a año.</p></header>
       <div class="controls">
         <div class="control control-wide">
           <label class="field-label" for="ix-index">Índice</label>
@@ -203,14 +247,14 @@
           <label class="field-label" for="ix-cov">Cobertura mínima <span id="ix-cov-val" class="mono">90%</span></label>
           <input type="range" id="ix-cov" min="50" max="100" value="90">
         </div>
-        <button id="ix-run" class="btn">Calcular</button>
       </div>
       <div id="plot-indices" class="plot"></div>
       <p id="ix-note" class="note"></p>
     </section>
 
     <!-- ---- TAB: RACHAS ---- -->
-    <section id="panel-rachas" class="panel" hidden>
+    <section id="panel-rachas" class="panel card" hidden>
+      <header class="panel-head"><h2>Rachas</h2><p>Días seguidos que cumplen una condición (por ejemplo, Tmax ≥ 35 °C) o períodos secos sin apenas lluvia.</p></header>
       <div class="controls">
         <div class="control control-wide">
           <label class="field-label" for="ra-modo">Modo</label>
@@ -271,7 +315,6 @@
             <input type="text" id="ra-md-end" class="mono md-input" placeholder="auto">
           </div>
         </div>
-        <button id="ra-run" class="btn">Calcular</button>
       </div>
       <div class="split">
         <div>
@@ -292,7 +335,8 @@
     </section>
 
     <!-- ---- TAB: COMPARADOR ---- -->
-    <section id="panel-comparador" class="panel" hidden>
+    <section id="panel-comparador" class="panel card" hidden>
+      <header class="panel-head"><h2>Comparador de años</h2><p>Cada punto es un año, situado según sus temperaturas medias en las mismas fechas. ¿Dónde cae el año que elijas?</p></header>
       <div class="controls">
         <div class="control">
           <label class="field-label" for="co-year">Año de referencia</label>
@@ -326,14 +370,14 @@
           <label class="field-label" for="co-cov">Cobertura mínima <span id="co-cov-val" class="mono">90%</span></label>
           <input type="range" id="co-cov" min="50" max="100" value="90">
         </div>
-        <button id="co-run" class="btn">Calcular</button>
       </div>
       <div id="plot-comparador" class="plot plot-tall"></div>
       <p id="co-note" class="note"></p>
     </section>
 
     <!-- ---- TAB: DISTRIBUCIÓN ---- -->
-    <section id="panel-distribucion" class="panel" hidden>
+    <section id="panel-distribucion" class="panel card" hidden>
+      <header class="panel-head"><h2>Distribución</h2><p>Cómo se reparten los valores diarios en dos períodos de años distintos: ¿se ha desplazado la curva?</p></header>
       <div class="controls">
         <div class="control">
           <label class="field-label" for="di-var">Variable</label>
@@ -375,14 +419,14 @@
             <option value="ecdf">ECDF</option>
           </select>
         </div>
-        <button id="di-run" class="btn">Calcular</button>
       </div>
       <div id="plot-distribucion" class="plot"></div>
       <p id="di-note" class="note"></p>
     </section>
 
     <!-- ---- TAB: CALENDARIO ---- -->
-    <section id="panel-calendario" class="panel" hidden>
+    <section id="panel-calendario" class="panel card" hidden>
+      <header class="panel-head"><h2>Calendario</h2><p>Un año completo, día a día, coloreado por su anomalía respecto a lo normal.</p></header>
       <div class="controls">
         <div class="control">
           <label class="field-label" for="ca-year">Año</label>
@@ -404,7 +448,6 @@
             <option value="abs">Valor absoluto</option>
           </select>
         </div>
-        <button id="ca-run" class="btn">Calcular</button>
       </div>
       <div id="plot-calendario" class="plot"></div>
       <p id="ca-note" class="note"></p>
@@ -412,7 +455,8 @@
 
 
     <!-- ---- TAB: OLAS ---- -->
-    <section id="panel-olas" class="panel" hidden>
+    <section id="panel-olas" class="panel card" hidden>
+      <header class="panel-head"><h2>Olas de calor y de frío</h2><p>Episodios de al menos 3 días por encima del percentil 95 de Tmax (calor) o por debajo del percentil 5 de Tmin (frío).</p></header>
       <div class="controls">
         <div class="control">
           <label class="field-label" for="ol-tipo">Tipo</label>
@@ -428,7 +472,6 @@
             <option value="oficial">Oficial AEMET adaptada: P fijo de jul–ago (calor) / ene–feb (frío) de 1971–2000</option>
           </select>
         </div>
-        <button id="ol-run" class="btn">Calcular</button>
       </div>
       <div id="plot-olas" class="plot"></div>
       <h3 class="block-title">Calendario de días en ola</h3>
@@ -437,13 +480,13 @@
     </section>
 
     <!-- ---- TAB: RÉCORDS ---- -->
-    <section id="panel-records" class="panel" hidden>
+    <section id="panel-records" class="panel card" hidden>
+      <header class="panel-head"><h2>Récords por década</h2><p>¿Se baten más récords de calor que de frío? Récords diarios batidos en cada década.</p></header>
       <div class="controls">
         <div class="control">
           <label class="field-label" for="re-skip">Décadas iniciales excluidas <span id="re-skip-val" class="mono">1</span></label>
           <input type="range" id="re-skip" min="0" max="3" value="1">
         </div>
-        <button id="re-run" class="btn">Calcular</button>
       </div>
       <div id="plot-records" class="plot"></div>
       <p id="re-note" class="note"></p>
@@ -451,7 +494,8 @@
 
 
     <!-- ---- TAB: COMPARAR PERÍODOS ---- -->
-    <section id="panel-periodos" class="panel" hidden>
+    <section id="panel-periodos" class="panel card" hidden>
+      <header class="panel-head"><h2>Comparar períodos</h2><p>Dos meses, estaciones o años frente a frente, día a día.</p></header>
       <div class="controls">
         <div class="control">
           <label class="field-label" for="pe-var">Variable</label>
@@ -484,14 +528,14 @@
             <input type="number" id="pe-b-yr" class="mono yr-input" value="2022">
           </div>
         </div>
-        <button id="pe-run" class="btn">Calcular</button>
       </div>
       <div id="plot-periodos" class="plot"></div>
       <p id="pe-note" class="note"></p>
     </section>
 
     <!-- ---- TAB: NACIONAL ---- -->
-    <section id="panel-nacional" class="panel" hidden>
+    <section id="panel-nacional" class="panel card" hidden>
+      <header class="panel-head"><h2>España</h2><p>Anomalía media del conjunto de estaciones de la red, año a año. No necesita elegir estación.</p></header>
       <div class="controls">
         <div class="control">
           <label class="field-label" for="na-var">Variable</label>
@@ -506,18 +550,18 @@
           <label class="field-label" for="na-min">Mínimo de estaciones <span id="na-min-val" class="mono">50</span></label>
           <input type="range" id="na-min" min="10" max="200" step="10" value="50">
         </div>
-        <button id="na-run" class="btn">Calcular</button>
       </div>
       <div id="plot-nacional" class="plot"></div>
       <p id="na-note" class="note"></p>
     </section>
 
     <!-- ---- TAB: DOS ESTACIONES ---- -->
-    <section id="panel-duelo" class="panel" hidden>
+    <section id="panel-duelo" class="panel card" hidden>
+      <header class="panel-head"><h2>Dos estaciones</h2><p>La misma variable en dos estaciones y cómo evoluciona la diferencia entre ellas.</p></header>
       <div class="controls">
         <div class="control control-wide search-box">
           <label class="field-label" for="du-search">Segunda estación</label>
-          <input type="text" id="du-search" placeholder="Nombre, provincia o indicativo…"
+          <input type="text" id="du-search" class="search-input" placeholder="Nombre, provincia o indicativo…"
                  autocomplete="off" spellcheck="false">
           <ul id="du-results" class="search-results" hidden></ul>
         </div>
@@ -538,16 +582,23 @@
             <input type="text" id="du-md-end" class="mono md-input" value="12-31">
           </div>
         </div>
-        <button id="du-run" class="btn">Calcular</button>
       </div>
       <div id="plot-duelo" class="plot plot-half"></div>
       <div id="plot-duelo-diff" class="plot plot-half"></div>
       <p id="du-note" class="note"></p>
     </section>
 
-  </main>
+    </main>
+  </div>
 </div>
 
-<script src="js/app.js?v=33"></script>
+<div id="loader" class="loader" hidden><span class="spinner"></span><span id="loader-txt">Cargando…</span></div>
+
+<footer class="site-foot">
+  <span>Datos: <a href="https://opendata.aemet.es" target="_blank" rel="noopener">AEMET OpenData</a> (© AEMET) · series no homogeneizadas</span>
+  <span>Hecho por <a href="https://x.com/MeteoZGZ" target="_blank" rel="noopener">@MeteoZGZ</a></span>
+</footer>
+
+<script src="js/app.js?v=40"></script>
 </body>
 </html>
