@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=44">
+<link rel="stylesheet" href="css/style.css?v=45">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -150,6 +150,7 @@
     <section id="panel-ahora" class="panel card" hidden>
       <header class="panel-head"><h2>Última hora</h2><p>Lo que están midiendo ahora las estaciones automáticas de AEMET: observaciones cada 10 minutos durante las últimas 24 horas. Se actualiza cada 20 minutos.</p></header>
       <p id="ah-status" class="live-status"></p>
+      <div id="ah-records" class="answer ah-records" hidden></div>
       <div class="controls">
         <div class="control control-wide">
           <label class="field-label" for="ah-var">Mapa</label>
@@ -161,7 +162,13 @@
             <option value="vmax">Racha máxima en 24 h</option>
             <option value="hr">Humedad relativa</option>
             <option value="d24">Cambio de temperatura en 24 h</option>
+            <option value="atx">Máxima del día frente a lo normal</option>
+            <option value="atn">Mínima del día frente a lo normal</option>
           </select>
+        </div>
+        <div class="control" id="ah-day-wrap" hidden>
+          <label class="field-label" for="ah-day">Día (provisional)</label>
+          <select id="ah-day"></select>
         </div>
         <div class="control control-wide" id="ah-hour-wrap">
           <label class="field-label" for="ah-hour">Hora: <span id="ah-hour-val" class="mono"></span></label>
@@ -196,6 +203,7 @@
           </div>
         </div>
         <div id="ah-tiles" class="rec-grid day-grid"></div>
+        <div id="ah-st-cmp" class="answer ah-cmp"></div>
         <p class="ah-links"><button class="link-btn" id="ah-st-clim" hidden>Ver hoy frente a su climatología →</button></p>
       </div>
       <div id="plot-ahora-st" class="plot"></div>
@@ -919,6 +927,6 @@
   <span>Hecho por <a href="https://x.com/MeteoZGZ" target="_blank" rel="noopener">@MeteoZGZ</a></span>
 </footer>
 
-<script src="js/app.js?v=44"></script>
+<script src="js/app.js?v=45"></script>
 </body>
 </html>

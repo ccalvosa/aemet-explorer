@@ -38,6 +38,7 @@ jobs:
           mkdir -p out
           if git fetch --depth=1 origin obs 2>/dev/null; then
             git show FETCH_HEAD:obs.json > prev.json || rm -f prev.json
+            git show FETCH_HEAD:daily.json > daily_prev.json || rm -f daily_prev.json
           fi
 
       - name: Descargar la última observación de AEMET
@@ -50,6 +51,16 @@ jobs:
             python scripts/update_obs.py --output out/obs.json
           fi
 
+      - name: Valores diarios provisionales y comparación con la climatología
+        run: |
+          [ -f out/obs.json ] || exit 0
+          if [ -f daily_prev.json ]; then
+            python scripts/update_daily.py --obs out/obs.json --previous daily_prev.json --data-dir data --output out/daily.json \
+              || cp daily_prev.json out/daily.json
+          else
+            python scripts/update_daily.py --obs out/obs.json --data-dir data --output out/daily.json || true
+          fi
+
       - name: Publicar en la rama obs (un solo commit)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -60,6 +71,6 @@ jobs:
           git config user.name "aemet-bot"
           git config user.email "actions@users.noreply.github.com"
           git checkout -q -b obs
-          git add obs.json
-          git commit -q -m "obs: últimas 24 h [bot]"
+          git add obs.json $( [ -f daily.json ] && echo daily.json )
+          git commit -q -m "obs: últimas 24 h y diarios provisionales [bot]"
           git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" obs

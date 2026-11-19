@@ -796,6 +796,22 @@ input[type="date"]:focus { outline: 2px solid var(--accent-soft); border-color: 
 .day-tile .rd .up { color: var(--tmax); font-weight: 700; }
 .day-tile .rd .down { color: var(--tmin); font-weight: 700; }
 #ah-hour { width: 100%; min-width: 180px; }
+.prov-tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--tmed) 22%, transparent);
+  color: var(--fg);
+  vertical-align: 1px;
+}
+.ah-records .muted, .ah-cmp .muted { color: var(--muted); font-size: 0.82rem; }
+.ah-records p { margin-top: 0.35rem; }
+.rec-list { list-style: none; margin: 0.5rem 0 0.2rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 0.3rem 1.2rem; }
+.rec-list li { cursor: pointer; font-size: 0.86rem; line-height: 1.4; }
+.rec-list li:hover b:first-child { text-decoration: underline; }
+.ah-cmp p + p { margin-top: 0.35rem; }
 @media (max-width: 560px) { .ah-search { min-width: 0; width: 100%; } }
 
 @media (max-width: 560px) {

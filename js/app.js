@@ -348,10 +348,73 @@ function mergeRecent(json) {
   return json;
 }
 
+/** daily.json (valores diarios provisionales de la red automática); una sola descarga. */
+function loadDaily() {
+  if (!state.dailyP) {
+    state.dailyP = (async () => {
+      const local = ["localhost", "127.0.0.1", ""].includes(location.hostname);
+      const remote = "https://raw.githubusercontent.com/ccalvosa/aemet-explorer/obs/daily.json";
+      const urls = local ? [`${DATA_URL}/daily.json`, remote] : [remote, `${DATA_URL}/daily.json`];
+      for (const u of urls) {
+        try {
+          const r = await fetch(`${u}?t=${Math.floor(Date.now() / 300000)}`, { cache: "no-cache" });
+          if (r.ok) { state.daily = await r.json(); return state.daily; }
+        } catch { /* siguiente */ }
+      }
+      return null;
+    })();
+  }
+  return state.dailyP;
+}
+
+/**
+ * Rellena con los valores diarios provisionales las fechas que aún no tienen
+ * dato consolidado (nunca sustituye uno). Marca esas fechas en json.prov.
+ */
+function mergeProvisional(json) {
+  const C = state.daily;
+  json.prov = {};
+  if (!C || !C.st[json.id]) return json;
+  const a = C.st[json.id];
+  const startMs = Date.parse(json.start + "T00:00:00Z");
+  C.days.forEach((ds, k) => {
+    const nh = a.nh[k] || 0, np = a.np[k] || 0;
+    if (nh < 6 && np < 6) return;
+    const idx = Math.round((Date.parse(ds + "T00:00:00Z") - startMs) / MS_DAY);
+    if (idx < 0) return;
+    const len = json.data[json.vars[0]].length;
+    if (idx >= len) {
+      for (const v of json.vars) json.data[v].push(...new Array(idx - len + 1).fill(null));
+      json.end = ds;
+    }
+    const D = json.data, used = [];
+    const put = (v, x) => { if (D[v] && x !== null && x !== undefined && D[v][idx] === null) { D[v][idx] = x; used.push(v); } };
+    if (nh >= 6) {
+      put("tmax", a.tx[k]); put("tmin", a.tn[k]);
+      if (a.tx[k] !== null && a.tn[k] !== null) put("tmed", Math.round(((a.tx[k] + a.tn[k]) / 2) * 10) / 10);
+    }
+    if (np >= 6) put("prec", a.p[k]);
+    if (used.length) json.prov[ds] = { nh, np, open: nh < 24 || np < 24, vars: used };
+  });
+  return json;
+}
+
 async function loadStation(id) {
-  await loadRecent();
+  await Promise.all([loadRecent(), loadDaily()]);
   const res = await fetch(`${DATA_URL}/stations/${id}.json`);
-  return makeCalendar(mergeRecent(await res.json()));
+  return makeCalendar(mergeProvisional(mergeRecent(await res.json())));
+}
+
+/** Información de dato provisional para el índice i de la estación (o null). */
+function provInfo(S, i) {
+  const p = S.json.prov;
+  if (!p) return null;
+  return p[fmtDate(S.startMs, i)] || null;
+}
+
+function provTxt(info) {
+  if (!info) return "";
+  return info.open ? `Provisional · día incompleto (${info.nh} de 24 h)` : "Provisional · red automática";
 }
 
 // ---------- carga y navegación ----------
@@ -581,7 +644,8 @@ function renderEphemeris() {
       const verdict = pct >= 95 ? "excepcionalmente cálida 🔥" : pct >= 80 ? "más cálida de lo normal"
         : pct <= 5 ? "excepcionalmente fría 🥶" : pct <= 20 ? "más fresca de lo normal" : "dentro de lo normal";
       box.innerHTML = `Último dato (${niceDate(lastIdx)}): máxima de <b>${nf1(tmax[lastIdx])} °C</b>, ` +
-        `${verdict} — percentil ${pct} de ${refA}–${refB} para esas fechas. ` +
+        `${verdict} — percentil ${pct} de ${refA}–${refB} para esas fechas` +
+        (provInfo(S, lastIdx) ? ` <span class="prov-tag">${provTxt(provInfo(S, lastIdx))}</span>` : "") + ". " +
         `<button class="link-btn" data-day="${fmtDate(S.startMs, lastIdx)}">Ver el día completo →</button>`;
       box.hidden = false;
     }
@@ -782,6 +846,8 @@ function runAnio() {
     const yy = hydro && +mm >= 10 ? year - 1 : year;
     if (dayIndex(S, `${yy}-${mm}-${dd}`) >= 0) openDay(`${yy}-${mm}-${dd}`);
   });
+  const provDays = Object.keys(S.json.prov || {}).filter((d) => +d.slice(0, 4) === year || (hydro && +d.slice(0, 4) === year - 1));
+  if (provDays.length) note += `Desde el ${+provDays[0].slice(8)} ${MESES[+provDays[0].slice(5, 7)]} los datos son provisionales (red automática, sin validar). `;
   $("an-note").textContent = note + (note ? " " : "") + "Pulsa un día de la línea del año para ver su ficha completa.";
 }
 
@@ -3343,6 +3409,13 @@ function runDia() {
   const vars = Object.keys(DAY_VARS).filter((v) => S.json.data[v]);
   const stats = vars.map((v) => dayStats(S, v, i, W, refA, refB)).filter((st) => st && st.sameDay.length);
   const tiles = buildDayTiles(S, i, stats, refA, refB);
+  const pvi = provInfo(S, i);
+  if (pvi && pvi.open) {
+    // día en curso: la máxima aún puede subir y la mínima bajar
+    for (const T of tiles) {
+      if (["tmax", "tmin", "tmed", "prec"].includes(T.v) && T.badges.length) T.badges = T.badges.map((b) => `${b} (de momento)`);
+    }
+  }
   renderDayTiles(tiles);
 
   // mes: completo, o hasta el último dato si está en curso
@@ -3356,13 +3429,19 @@ function runDia() {
     ? `${cap(MESES_LARGO[mo])} de ${Y} frente a otros ${MESES_LARGO[mo]}`
     : `Del 1 al ${dEnd} de ${MESES_LARGO[mo]} de ${Y} frente a las mismas fechas de otros años`;
 
-  const head = dayHeadline(S, i, tiles, mrows, full, dEnd);
+  let head = dayHeadline(S, i, tiles, mrows, full, dEnd);
+  if (pvi) head += pvi.open
+    ? ` Ojo: día en curso con datos provisionales de la red automática (${pvi.nh} de 24 h); la máxima aún puede subir y la mínima bajar.`
+    : " Datos provisionales de la red automática, pendientes de validación por AEMET.";
   $("dia-headline").innerHTML = head;
   const dow = DIAS_SEMANA[new Date(S.startMs + i * MS_DAY).getUTCDay()];
   $("dia-card-date").textContent = `${cap(dow)}, ${md % 100} de ${MESES_LARGO[mo]} de ${Y}`;
-  $("dia-card-sub").textContent = `${S.json.name} (${S.json.province}) · normal ${refA}–${refB}, ±${W} días`;
+  const pv = provInfo(S, i);
+  $("dia-card-sub").innerHTML = `${S.json.name} (${S.json.province}) · normal ${refA}–${refB}, ±${W} días` +
+    (pv ? ` <span class="prov-tag">${provTxt(pv)}</span>` : "");
   state.diaCard = { title: S.json.name, date: $("dia-card-date").textContent,
-    sub: `${S.json.province}${S.json.altitude !== null ? ` · ${S.json.altitude} m` : ""} · normal ${refA}–${refB}`,
+    sub: `${S.json.province}${S.json.altitude !== null ? ` · ${S.json.altitude} m` : ""} · normal ${refA}–${refB}` +
+      (pv ? ` · ${provTxt(pv).toLowerCase()}` : ""),
     tiles, headline: head.replace(/<[^>]+>/g, "").replace(/🏆/g, "★") };
 
   plotDaySwarm(S, i, stats, refA, refB, W);
@@ -3648,6 +3727,19 @@ function obsField(v, k) {
   for (const st of O.list) {
     const D = O.data[st.id];
     let z = null, ms = null;
+    let note = null;
+    if (v === "atx" || v === "atn") {
+      const r = dayCmp(st.id, $("ah-day").value);
+      if (r) {
+        const val = v === "atx" ? r.tx : r.tn, nrm = v === "atx" ? r.ntx : r.ntn, pc = v === "atx" ? r.ptx : r.ptn;
+        if (val !== null && nrm !== null) {
+          z = Math.round((val - nrm) * 10) / 10;
+          note = `${nf1(val)} °C${pc !== null ? ` · P${pctTxt(pc)}` : ""}`;
+        }
+      }
+      if (z !== null) out.push({ st, z, ms: null, note });
+      continue;
+    }
     if (v === "ta" || v === "hr") {
       for (let q = k; q >= Math.max(0, k - back); q--) {
         const x = obsVal(D[v], q);
@@ -3666,8 +3758,70 @@ function obsField(v, k) {
   return out;
 }
 
+/** Valores provisionales y comparación climatológica de una estación para el día ds. */
+function dayCmp(id, ds) {
+  const C = state.daily;
+  if (!C || !ds || !C.cmp[ds] || !C.cmp[ds][id] || !C.st[id]) return null;
+  const k = C.days.indexOf(ds), a = C.st[id], c = C.cmp[ds][id];
+  return { tx: a.tx[k], tn: a.tn[k], nh: a.nh[k] || 0, ntx: c[0], ptx: c[1], ntn: c[2], ptn: c[3],
+           rtxHi: [c[4], c[5]], rtxLo: [c[6], c[7]], rtnHi: [c[8], c[9]], rtnLo: [c[10], c[11]],
+           mtxHi: [c[12], c[13]], mtnLo: [c[14], c[15]] };
+}
+
+const dayLabel = (ds) => `${+ds.slice(8)} de ${MESES_LARGO[+ds.slice(5, 7)]}`;
+
+/** Récords (de la fecha o del mes) que superan los valores provisionales del día ds. */
+function dayRecords(ds) {
+  const C = state.daily, out = [];
+  if (!C || !C.cmp[ds]) return out;
+  const mes = MESES_LARGO[+ds.slice(5, 7)];
+  for (const id of Object.keys(C.cmp[ds])) {
+    const st = state.index.stations.find((x) => x.id === id);
+    if (!st || st.n_days < 30 * 365) continue;          // solo series de 30 años o más
+    const r = dayCmp(id, ds);
+    const chk = (val, rec, hi, what) => {
+      if (val === null || rec[0] === null) return;
+      if (hi ? val > rec[0] : val < rec[0]) out.push({ id, name: st.name, what, val, old: rec[0], year: rec[1], month: what.includes(mes) });
+    };
+    chk(r.tx, r.mtxHi, true, `máxima más alta de ${mes}`);
+    chk(r.tn, r.mtnLo, false, `mínima más baja de ${mes}`);
+    if (!out.some((o) => o.id === id && o.what.startsWith("máxima"))) chk(r.tx, r.rtxHi, true, "máxima más alta para la fecha");
+    if (!out.some((o) => o.id === id && o.what.startsWith("mínima más baja"))) chk(r.tn, r.rtnLo, false, "mínima más baja para la fecha");
+    // con el día incompleto, la mínima aún puede bajar y la máxima subir: esos récords no están asegurados
+    if (r.nh >= 24) {
+      chk(r.tn, r.rtnHi, true, "mínima más alta para la fecha");
+      chk(r.tx, r.rtxLo, false, "máxima más baja para la fecha");
+    }
+  }
+  return out.sort((a, b) => (b.month - a.month) || (Math.abs(b.val - b.old) - Math.abs(a.val - a.old)));
+}
+
+function renderDayRecords() {
+  const box = $("ah-records");
+  const ds = $("ah-day").value;
+  const C = state.daily;
+  if (!C || !ds) { box.hidden = true; return; }
+  const recs = dayRecords(ds);
+  const isToday = ds === C.days[C.days.length - 1];
+  const head = `<b>🏆 Récords provisionales · ${isToday ? "hoy" : "ayer"}, ${dayLabel(ds)}</b>` +
+    (isToday ? ` <span class="muted">(día en curso: solo se cuentan los récords ya asegurados, máximas que superan el récord y mínimas que bajan del suyo)</span>` : "");
+  box.hidden = false;
+  if (!recs.length) {
+    box.innerHTML = `${head}<p class="muted">Ninguna estación con más de 30 años de datos está batiendo un récord de su fecha.</p>`;
+    return;
+  }
+  const li = recs.slice(0, 14).map((o) =>
+    `<li data-id="${o.id}"><b>${o.name}</b> — ${o.what}: <b>${nf1(o.val)} °C</b> ` +
+    `<span class="muted">(antes ${nf1(o.old)} °C en ${o.year})</span></li>`).join("");
+  box.innerHTML = `${head}<ul class="rec-list">${li}</ul>` +
+    (recs.length > 14 ? `<p class="muted">… y ${recs.length - 14} más.</p>` : "") +
+    `<p class="muted">${recs.length} récords en estaciones con más de 30 años de datos. Valores sin validar, de la red automática.</p>`;
+}
+
 const OBS_DEFS = {
   ta: { label: "Temperatura", unit: "°C", fmt: ".1f", hiT: "Más calor", loT: "Más frío" },
+  atx: { label: "Anomalía de la máxima", unit: "°C", fmt: "+.1f", hiT: "Máximas más cálidas para la fecha", loT: "Máximas más frías para la fecha", day: true },
+  atn: { label: "Anomalía de la mínima", unit: "°C", fmt: "+.1f", hiT: "Mínimas más cálidas para la fecha", loT: "Mínimas más frías para la fecha", day: true },
   tamax: { label: "Máxima de las últimas 24 h", unit: "°C", fmt: ".1f", hiT: "Máximas más altas", loT: "Máximas más bajas" },
   tamin: { label: "Mínima de las últimas 24 h", unit: "°C", fmt: ".1f", hiT: "Mínimas más altas", loT: "Mínimas más bajas" },
   prec: { label: "Lluvia acumulada en 24 h", unit: "mm", fmt: ".1f", hiT: "Más lluvia", loT: null },
@@ -3685,7 +3839,7 @@ function stopObsPlay() {
 async function runAhora() {
   let O;
   showLoader("Cargando la última hora…");
-  try { O = await loadObs(); } catch {
+  try { [O] = await Promise.all([loadObs(), loadDaily()]); } catch {
     hideLoader();
     $("ah-status").innerHTML = "No se han podido cargar las observaciones. Prueba de nuevo en unos minutos.";
     return;
@@ -3698,7 +3852,17 @@ async function runAhora() {
   const sl = $("ah-hour");
   sl.min = O.avail[0]; sl.max = O.kLast;
   if (!state.obsHourTouched || +sl.value > O.kLast || +sl.value < O.avail[0]) sl.value = O.kLast;
+  const C = state.daily, sel = $("ah-day");
+  if (C) {
+    const ds = Object.keys(C.cmp).sort().reverse();
+    const prevSel = sel.value;
+    sel.innerHTML = ds.map((d, q) => `<option value="${d}">${q === 0 ? "Hoy" : "Ayer"}, ${dayLabel(d)}${q === 0 ? " (en curso)" : ""}</option>`).join("");
+    // por la mañana la máxima de hoy aún no significa nada: se empieza por ayer
+    const utcH = new Date().getUTCHours();
+    sel.value = ds.includes(prevSel) ? prevSel : (utcH < 14 && ds[1] && Object.keys(C.cmp[ds[1]]).length ? ds[1] : ds[0]);
+  }
   runAhoraMap();
+  renderDayRecords();
   if (!state.obsSel || !O.data[state.obsSel]) {
     const cur = state.station && O.data[state.station.json.id] ? state.station.json.id : null;
     state.obsSel = cur || (O.data["3195"] ? "3195" : O.list[0].id);
@@ -3712,15 +3876,21 @@ function runAhoraMap() {
   const v = $("ah-var").value, def = OBS_DEFS[v];
   const inst = v === "ta" || v === "hr";
   $("ah-hour-wrap").hidden = !inst;
+  $("ah-day-wrap").hidden = !def.day;
   const h = +$("ah-hour").value;
   $("ah-hour-val").textContent = madridLabel(obsMs(h));
   const pts = obsField(v, inst ? h : O.kLast);
-  if (!pts.length) { Plotly.purge("plot-ahora-mapa"); return; }
+  if (!pts.length) {
+    Plotly.purge("plot-ahora-mapa");
+    $("ah-note").textContent = def.day ? "Aún no hay valores diarios provisionales para ese día." : "";
+    return;
+  }
   const zs = pts.map((p) => p.z).sort((a, b) => a - b);
   let cs, cmin, cmax;
   if (v === "prec") { cs = PREC_SCALE; cmin = 0; cmax = Math.max(10, quantile(zs, 0.98)); }
   else if (v === "vmax") { cs = WIND_SCALE; cmin = 0; cmax = Math.max(60, quantile(zs, 0.98)); }
   else if (v === "hr") { cs = HR_SCALE; cmin = 20; cmax = 100; }
+  else if (def.day) { cs = DIV_TEMP; cmin = -8; cmax = 8; }
   else if (v === "d24") { cs = DIV_TEMP; const a = Math.max(3, Math.abs(quantile(zs, 0.02)), Math.abs(quantile(zs, 0.98))); cmin = -a; cmax = a; }
   else {
     cs = TEMP_SCALE;
@@ -3738,7 +3908,7 @@ function runAhoraMap() {
   const canary = (p) => p.st.lat < 30;
   const mk = (list, geo, showscale) => ({
     type: "scattergeo", geo, lat: list.map((p) => p.st.lat), lon: list.map((p) => p.st.lon),
-    text: list.map((p) => `<b>${p.st.name}</b>` + (p.ms ? ` · ${madridHour(p.ms)}` : "")),
+    text: list.map((p) => `<b>${p.st.name}</b>` + (p.note ? ` · ${p.note}` : p.ms ? ` · ${madridHour(p.ms)}` : "")),
     customdata: list.map((p) => [p.z, p.st.id]),
     hovertemplate: `%{text}<br>%{customdata[0]:${def.fmt}} ${def.unit}<extra></extra>`,
     mode: "markers",
@@ -3752,7 +3922,9 @@ function runAhoraMap() {
     showland: true, landcolor: TH.card2, showocean: true, oceancolor: TH.card, bgcolor: TH.card,
     showcountries: true, countrycolor: TH.border, coastlinecolor: TH.border, showlakes: false,
   };
-  const when = inst ? madridLabel(obsMs(h)) : `24 h hasta ${madridLabel(obsMs(O.kLast))}`;
+  const dsel = $("ah-day").value;
+  const when = inst ? madridLabel(obsMs(h)) : def.day ? `${+dsel.slice(8)} ${MESES[+dsel.slice(5, 7)]} (provisional)`
+    : `24 h hasta ${madridLabel(obsMs(O.kLast))}`;
   const layout = baseLayout(`${def.label} · ${when}`);
   layout.margin = { l: 0, r: 0, t: 44, b: 0 };
   layout.geo = { ...geoBase, lataxis: { range: [35.2, 44.2] }, lonaxis: { range: [-10.2, 4.8] }, domain: { x: [0, 1], y: [0, 1] } };
@@ -3771,7 +3943,7 @@ function runAhoraMap() {
   const row = (p, k) => `<tr data-id="${p.st.id}"><td>${k + 1}</td><td>${p.st.name}` +
     `${p.st.province ? ` <span class="muted">${titleCase(p.st.province)}</span>` : ""}</td>` +
     `<td><b>${v === "d24" ? sgnf(p.z) : p.z.toFixed(def.fmt.endsWith("0f") ? 0 : 1).replace(".", ",")} ${def.unit}</b></td>` +
-    `<td class="muted">${p.ms ? madridHour(p.ms) : ""}</td></tr>`;
+    `<td class="muted">${p.note || (p.ms ? madridHour(p.ms) : "")}</td></tr>`;
   const desc = [...pts].sort((a, b) => b.z - a.z), asc = [...pts].sort((a, b) => a.z - b.z);
   $("ah-rank-hi-t").textContent = def.hiT;
   $("ah-rank-hi").querySelector("tbody").innerHTML = desc.slice(0, 10).map(row).join("");
@@ -3784,10 +3956,49 @@ function runAhoraMap() {
   $("ah-note").textContent =
     `${pts.length} estaciones con dato. Mediana: ${med.toFixed(def.fmt.endsWith("0f") ? 0 : 1).replace(".", ",")} ${def.unit}. ` +
     "Datos horarios de las estaciones automáticas de AEMET, sin validar: puede haber valores erróneos. " +
+    (def.day ? `Anomalía frente a la normal ${(state.daily.ref || [1991, 2020]).join("–")} de cada estación (±7 días); máxima y mínima de 00 a 24 UTC. ` : "") +
     "Cada estación muestra su último dato de la hora anterior (muchas envían los 10 minutos en bloque cada hora). " +
     "Las máximas y mínimas incluyen los extremos de cada hora y exigen dato en al menos el 75 % de las horas. " +
     "Las horas son peninsulares (en Canarias, una menos). " +
     "Pulsa una estación del mapa o de las tablas para ver sus últimas 24 horas.";
+}
+
+/** Hoy y ayer de una estación frente a su climatología (valores provisionales). */
+function renderStationDayCmp(id) {
+  const box = $("ah-st-cmp"), C = state.daily;
+  if (!C) { box.innerHTML = ""; return; }
+  const parts = [];
+  const ref = (C.ref || [1991, 2020]).join("–");
+  const dsList = Object.keys(C.cmp).sort().reverse();
+  dsList.forEach((ds, q) => {
+    const r = dayCmp(id, ds);
+    if (!r) return;
+    const bits = [];
+    const open = r.nh < 24;
+    // isMax: la máxima solo puede subir durante el día; la mínima, solo bajar
+    const one = (lbl, val, nrm, pc, recHi, recLo, isMax) => {
+      if (val === null) return;
+      let t = `${lbl} <b>${nf1(val)} °C</b>`;
+      if (nrm !== null) t += ` (${sgnf(val - nrm)} °C frente a la normal${pc !== null ? `, percentil ${pctTxt(pc)}` : ""})`;
+      const firm = (hi) => !open || hi === isMax;
+      if (recHi[0] !== null && val > recHi[0]) {
+        t += firm(true) ? ` · <b>supera el récord de la fecha</b> (${nf1(recHi[0])} °C en ${recHi[1]})`
+          : ` · de momento, por encima del récord de la fecha (${nf1(recHi[0])} °C en ${recHi[1]}), pero aún puede bajar`;
+      } else if (recLo[0] !== null && val < recLo[0]) {
+        t += firm(false) ? ` · <b>bate el récord por abajo</b> (${nf1(recLo[0])} °C en ${recLo[1]})`
+          : ` · de momento, por debajo del récord de la fecha (${nf1(recLo[0])} °C en ${recLo[1]}), pero aún puede subir`;
+      }
+      bits.push(t);
+    };
+    one("máxima", r.tx, r.ntx, r.ptx, r.rtxHi, r.rtxLo, true);
+    one("mínima", r.tn, r.ntn, r.ptn, r.rtnHi, r.rtnLo, false);
+    if (!bits.length) return;
+    parts.push(`<p><b>${q === 0 ? "Hoy" : "Ayer"}, ${dayLabel(ds)}</b>` +
+      `${q === 0 || r.nh < 24 ? ` <span class="muted">(${r.nh} de 24 h)</span>` : ""}: ${bits.join("; ")}.</p>`);
+  });
+  box.innerHTML = parts.length
+    ? parts.join("") + `<p class="muted">Valores provisionales de la red automática frente a la normal ${ref} (±7 días) y los récords de la serie diaria.</p>`
+    : "";
 }
 
 function renderObsStation(id) {
@@ -3828,6 +4039,7 @@ function renderObsStation(id) {
       S.dp3 !== null ? `${sgnf(S.dp3)} hPa en 3 h` : "en la estación");
   }
   $("ah-tiles").innerHTML = tiles.join("");
+  renderStationDayCmp(id);
 
   // ---- gráfico de 24 h: trazo de 10 min, huecos de más de 75 min sin unir ----
   const ks = [];
@@ -4154,7 +4366,7 @@ function bindControls() {
   }
   for (const name of Object.keys(TAB_RUNNERS)) {
     $(`panel-${name}`).querySelectorAll(".controls select, .controls input").forEach((el) => {
-      if (["du-search", "dia-date", "ah-hour", "ah-search"].includes(el.id)) return;
+      if (["du-search", "dia-date", "ah-hour", "ah-search", "ah-day"].includes(el.id)) return;
       el.addEventListener("change", () => {
         if (state.station || NO_STATION_TABS.has(name)) runPanel(name);
       });
@@ -4210,6 +4422,13 @@ function bindControls() {
       sl.value = +sl.value + 1;
       safeRun(runAhoraMap);
     }, 220);
+  });
+  $("ah-day").addEventListener("change", () => { safeRun(runAhoraMap); safeRun(renderDayRecords); });
+  $("ah-records").addEventListener("click", (e) => {
+    const li = e.target.closest("li[data-id]");
+    if (!li) return;
+    renderObsStation(li.dataset.id);
+    $("ah-station").scrollIntoView({ behavior: "smooth", block: "start" });
   });
   for (const t of ["ah-rank-hi", "ah-rank-lo"]) {
     $(t).addEventListener("click", (e) => {

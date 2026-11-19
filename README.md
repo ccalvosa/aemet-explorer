@@ -50,7 +50,11 @@ Los análisis se agrupan en cinco bloques:
   (`observacion/convencional/diezminutal/todas`, que solo da la última hora) más las horarias
   (`observacion/convencional/todas`, ~12 h, con máxima, mínima y lluvia de cada hora), fusionadas
   con la ejecución anterior para guardar 24 h → `obs.json`. Descarta valores con bandera de calidad ≥ 3.
-- `.github/workflows/obs.yml` — lanza `update_obs.py` cada 20 minutos y publica `obs.json` en la
+- `scripts/update_daily.py` — a partir de `obs.json`, Tmax/Tmin (00–24 UTC) y lluvia (07–07 UTC)
+  diarias **provisionales** de los últimos 20 días → `daily.json`, más la comparación de hoy y
+  ayer con la normal 1991–2020 y los récords de cada estación. La web rellena con ellas los días
+  sin dato consolidado (marcados como provisionales) y muestra anomalías y récords en «Última hora».
+- `.github/workflows/obs.yml` — lanza `update_obs.py` y `update_daily.py` cada 20 minutos y publica `obs.json` y `daily.json` en la
   rama `obs` (un único commit reescrito, para no engordar el historial). La web lo lee de
   `raw.githubusercontent.com/ccalvosa/aemet-explorer/obs/obs.json`; en local, de `data/obs.json`.
 - `.github/workflows/update.yml` — ejecuta `update_recent.py` cada día a las
