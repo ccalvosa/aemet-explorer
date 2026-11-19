@@ -216,8 +216,8 @@ def main():
         for sid, r in day_values(hours, d).items():
             o = old.get((sid, d.isoformat()), {})
             # no empeorar un día ya completo con menos horas
-            keep_t = o.get("nh", 0) > r["nh"]
-            keep_p = o.get("np", 0) > r["np"]
+            keep_t = (o.get("nh") or 0) > (r["nh"] or 0)
+            keep_p = (o.get("np") or 0) > (r["np"] or 0)
             vals[(sid, d.isoformat())] = {
                 "tx": o.get("tx") if keep_t else r["tx"], "tn": o.get("tn") if keep_t else r["tn"],
                 "nh": o.get("nh") if keep_t else r["nh"],
