@@ -1,0 +1,65 @@
+name: update-obs
+
+# Observaciones cada 10 minutos de las últimas 24 h (pestaña «Última hora»).
+# El endpoint diezminutal de AEMET solo da la última hora: hay que lanzarlo a menudo.
+# Se guardan en la rama «obs», que siempre tiene un único commit (se reescribe
+# con push forzado) para no llenar el historial de main con decenas de commits al día.
+# La web lee https://raw.githubusercontent.com/<repo>/obs/obs.json
+
+on:
+  schedule:
+    - cron: "7,27,47 * * * *"   # cada 20 min; los datos horarios rellenan huecos si GitHub se retrasa
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-obs
+  cancel-in-progress: false
+
+jobs:
+  obs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      - name: Recuperar las observaciones acumuladas
+        run: |
+          mkdir -p out
+          if git fetch --depth=1 origin obs 2>/dev/null; then
+            git show FETCH_HEAD:obs.json > prev.json || rm -f prev.json
+          fi
+
+      - name: Descargar la última observación de AEMET
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+        run: |
+          if [ -f prev.json ]; then
+            python scripts/update_obs.py --previous prev.json --output out/obs.json
+          else
+            python scripts/update_obs.py --output out/obs.json
+          fi
+
+      - name: Publicar en la rama obs (un solo commit)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          [ -f out/obs.json ] || { echo "Sin datos que publicar."; exit 0; }
+          cd out
+          git init -q
+          git config user.name "aemet-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout -q -b obs
+          git add obs.json
+          git commit -q -m "obs: últimas 24 h [bot]"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" obs

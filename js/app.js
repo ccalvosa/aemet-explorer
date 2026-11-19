@@ -258,7 +258,7 @@ function normalize(s) {
 }
 
 /** Buscador con teclado sobre el catálogo; onPick(id) al elegir. */
-function makeSearch(inputEl, listEl, onPick) {
+function makeSearch(inputEl, listEl, onPick, opts = {}) {
   let selIdx = -1;
   function render(matches) {
     listEl.innerHTML = "";
@@ -268,8 +268,8 @@ function makeSearch(inputEl, listEl, onPick) {
       const li = document.createElement("li");
       li.innerHTML =
         `<span class="r-name">${st.name}</span>` +
-        `<span class="r-meta">${st.province} · ${st.start.slice(0, 4)}–${st.end.slice(0, 4)}` +
-        `${st.altitude !== null ? ` · ${st.altitude} m` : ""} · ${st.id}</span>`;
+        `<span class="r-meta">${opts.meta ? opts.meta(st) : `${st.province} · ${st.start.slice(0, 4)}–${st.end.slice(0, 4)}` +
+        `${st.altitude !== null ? ` · ${st.altitude} m` : ""} · ${st.id}`}</span>`;
       li.addEventListener("mousedown", () => { listEl.hidden = true; inputEl.value = ""; onPick(st.id); });
       listEl.appendChild(li);
     }
@@ -283,7 +283,7 @@ function makeSearch(inputEl, listEl, onPick) {
       const n = normalize(st.name);
       return (st.id.toLowerCase() === q ? 0 : n.startsWith(q) ? 1 : n.includes(q) ? 2 : 3) * 1e6 - st.n_days;
     };
-    render(state.index.stations.filter((st) =>
+    render((opts.list ? opts.list() : state.index.stations).filter((st) =>
       normalize(st.name).includes(q) ||
       normalize(st.province).includes(q) ||
       st.id.toLowerCase().startsWith(q)).sort((a, b) => score(a) - score(b)).slice(0, 12));
@@ -373,7 +373,7 @@ function showApp() {
   $("top-search").hidden = false;
   $("station-plate").hidden = !state.station;
   document.querySelectorAll(".tab").forEach((b) => {
-    b.disabled = !state.station && b.dataset.tab !== "nacional";
+    b.disabled = !state.station && !NO_STATION_TABS.has(b.dataset.tab);
     b.title = b.disabled ? "Elige antes una estación" : "";
   });
 }
@@ -415,7 +415,7 @@ function routeFromHash() {
   if (!m) return false;
   const id = decodeURIComponent(m[1]);
   if (m[3]) state.diaDate = m[3];
-  if (id === "espana") { goNational(); return true; }
+  if (id === "espana") { showApp(); activateTab(NO_STATION_TABS.has(m[2]) ? m[2] : "nacional"); return true; }
   if (!state.index.stations.some((s) => s.id === id)) return false;
   selectStation(id, m[2]);
   return true;
@@ -633,9 +633,12 @@ function runPanel(name) {
   if (TAB_RUNNERS[name]) safeRun(TAB_RUNNERS[name]);
 }
 
+const NO_STATION_TABS = new Set(["nacional", "ahora"]);
+
 function activateTab(name) {
-  if (!state.station && name !== "nacional") return;
+  if (!state.station && !NO_STATION_TABS.has(name)) return;
   stopNatPlay();
+  stopObsPlay();
   const navName = name === "distribucion" ? "periodos" : name;
   document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === navName));
   document.querySelectorAll(".panel").forEach((p) => { p.hidden = true; });
@@ -3478,6 +3481,452 @@ function dayCardCanvas(SCALE) {
 }
 
 // ==========================================================
+// PRODUCTO: Última hora — observaciones cada 10 minutos de las últimas 24 h
+// ==========================================================
+
+const OBS_REMOTE = "https://raw.githubusercontent.com/ccalvosa/aemet-explorer/obs/obs.json";
+const OBS_MAXAGE = 10 * 60000;   // recarga si los datos en memoria tienen más de 10 min
+const MAD_FMT = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit",
+  day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const RUMBOS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"];
+const rumbo = (deg) => (deg === null || deg === undefined ? "" : RUMBOS[Math.round(deg / 22.5) % 16]);
+const TEMP_SCALE = [[0, "#313695"], [0.15, "#4575b4"], [0.3, "#74add1"], [0.42, "#abd9e9"], [0.5, "#ffffbf"],
+  [0.6, "#fdae61"], [0.75, "#f46d43"], [0.88, "#d73027"], [1, "#a50026"]];
+const PREC_SCALE = [[0, "#e7f5e9"], [0.15, "#a9dfb0"], [0.35, "#4fb06d"], [0.6, "#1c7ed6"], [0.85, "#5f3dc4"], [1, "#862e9c"]];
+const WIND_SCALE = [[0, "#f3f0ff"], [0.3, "#b197fc"], [0.6, "#7048e8"], [0.85, "#c2255c"], [1, "#862e3c"]];
+const HR_SCALE = [[0, "#b08968"], [0.4, "#ede0d4"], [0.7, "#74c0fc"], [1, "#1864ab"]];
+
+/** "YYYY-MM-DD HH:MM" en hora peninsular (para ejes de Plotly). */
+function madridStr(ms) {
+  const p = Object.fromEntries(MAD_FMT.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+const madridHour = (ms) => madridStr(ms).slice(11, 16);
+function madridLabel(ms) {
+  const s = madridStr(ms);
+  const today = madridStr(Date.now()).slice(0, 10);
+  const yest = madridStr(Date.now() - MS_DAY).slice(0, 10);
+  const d = s.slice(0, 10);
+  const day = d === today ? "hoy" : d === yest ? "ayer" : `${+d.slice(8)} ${MESES[+d.slice(5, 7)]}`;
+  return `${day} a las ${s.slice(11, 16)}`;
+}
+
+/** "SANTA CRUZ DE TENERIFE" → "Santa Cruz de Tenerife". */
+function titleCase(t) {
+  return (t || "").toLowerCase().replace(/(^|[\s(/-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase())
+    .replace(/(?<=\s)(De|Del|La|Las|El|Los|Y|D')(?=\s)/g, (w) => w.toLowerCase());
+}
+
+/** Nombre legible: el del catálogo si la estación está en él; si no, el de AEMET en minúsculas. */
+function obsName(id) {
+  const st = state.index && state.index.stations.find((s) => s.id === id);
+  if (st) return st.name;
+  const raw = (state.obs.meta[id] || [id])[0] || id;
+  return titleCase(raw);
+}
+
+async function loadObs(force) {
+  if (!force && state.obs && Date.now() - state.obs.loadedAt < OBS_MAXAGE) return state.obs;
+  const bust = `?t=${Math.floor(Date.now() / 300000)}`;
+  const local = ["localhost", "127.0.0.1", ""].includes(location.hostname);
+  const urls = local ? [`${DATA_URL}/obs.json`, OBS_REMOTE] : [OBS_REMOTE, `${DATA_URL}/obs.json`];
+  let O = null;
+  for (const u of urls) {
+    try {
+      const r = await fetch(u + bust, { cache: "no-cache" });
+      if (r.ok) { O = await r.json(); break; }
+    } catch { /* siguiente fuente */ }
+  }
+  if (!O) throw new Error("sin datos de observación");
+  O.loadedAt = Date.now();
+  O.t0ms = Date.parse(O.t0);
+  O.stepMs = (O.step || 3600) * 1000;
+  O.h0ms = Date.parse(O.h0 || O.t0);
+  O.nh = O.nh || O.n;
+  O.ids = Object.keys(O.data);
+  // instantes (de 10 min) con temperatura en alguna estación
+  O.avail = [];
+  for (let k = 0; k < O.n; k++) {
+    if (O.ids.some((id) => O.data[id].ta && O.data[id].ta[k] !== null)) O.avail.push(k);
+  }
+  O.kLast = O.avail.length ? O.avail[O.avail.length - 1] : O.n - 1;
+  // horas de la rejilla horaria que tienen algún instante con datos
+  const availMs = new Set(O.avail.map((k) => O.t0ms + k * O.stepMs));
+  O.hAvail = [];
+  for (let j = 0; j < O.nh; j++) {
+    const end = O.h0ms + j * 3600000;
+    for (let ms = end - 3600000 + O.stepMs; ms <= end; ms += O.stepMs) if (availMs.has(ms)) { O.hAvail.push(j); break; }
+  }
+  state.obs = O;
+  O.list = O.ids.filter((id) => O.meta[id] && O.meta[id][1] !== null).map((id) => {
+    const m = O.meta[id], inIdx = state.index && state.index.stations.find((s) => s.id === id);
+    return { id, name: obsName(id), province: inIdx ? inIdx.province : "", altitude: m[3],
+             lat: m[1], lon: m[2], n_days: inIdx ? inIdx.n_days : 0 };
+  });
+  state.obs = O;
+  return O;
+}
+
+const obsMs = (k) => state.obs.t0ms + k * state.obs.stepMs;
+const obsHMs = (j) => state.obs.h0ms + j * 3600000;
+const obsVal = (a, k) => (a && a[k] !== null && a[k] !== undefined ? a[k] : null);
+
+/** Índices de 10 min dentro de la hora j de la rejilla horaria: (fin − 60 min, fin]. */
+function slotsOfHour(j) {
+  const O = state.obs;
+  const end = Math.round((obsHMs(j) - O.t0ms) / O.stepMs), per = Math.round(3600000 / O.stepMs), out = [];
+  for (let k = end - per + 1; k <= end; k++) if (k >= 0 && k < O.n) out.push(k);
+  return out;
+}
+
+/** Lluvia de la hora j: la horaria o, si falta, la suma de sus 10 min (con al menos 5 de 6). */
+function hourPrec(D, j) {
+  const p = obsVal(D.prec, j);
+  if (p !== null) return p;
+  const ks = slotsOfHour(j).map((k) => obsVal(D.p10, k)).filter((x) => x !== null);
+  return ks.length >= Math.max(1, slotsOfHour(j).length - 1) ? ks.reduce((t, x) => t + x, 0) : null;
+}
+
+/** Resumen de las últimas 24 h de una estación. Extremos solo si hay dato en ≥ 75 % de las horas. */
+function obsSummary(id) {
+  const O = state.obs, D = O.data[id];
+  const need = Math.max(3, 0.75 * O.hAvail.length);
+  let hoursOk = 0;
+  for (const j of O.hAvail) {
+    if (obsVal(D.tamax, j) !== null || slotsOfHour(j).some((k) => obsVal(D.ta, k) !== null)) hoursOk++;
+  }
+  const covered = hoursOk >= need;
+  let tmax = null, tmin = null, gust = null;
+  for (const k of O.avail) {
+    const t = obsVal(D.ta, k);
+    if (t !== null) {
+      if (!tmax || t > tmax.v) tmax = { v: t, ms: obsMs(k) };
+      if (!tmin || t < tmin.v) tmin = { v: t, ms: obsMs(k) };
+    }
+    const g = obsVal(D.vmax, k);
+    if (g !== null && (!gust || g > gust.v)) gust = { v: g, ms: obsMs(k), dir: obsVal(D.dmax, k) };
+  }
+  // los extremos horarios salen de datos de cada minuto: pueden superar a los de 10 min
+  for (const j of O.hAvail) {
+    const a = obsVal(D.tamax, j), b = obsVal(D.tamin, j);
+    if (a !== null && (!tmax || a > tmax.v)) tmax = { v: a, ms: obsHMs(j), hourly: true };
+    if (b !== null && (!tmin || b < tmin.v)) tmin = { v: b, ms: obsHMs(j), hourly: true };
+  }
+  let psum = 0, pn = 0;
+  for (const j of O.hAvail) { const p = hourPrec(D, j); if (p !== null) { psum += p; pn++; } }
+  let lastK = null;
+  for (let q = O.avail.length - 1; q >= 0; q--) if (obsVal(D.ta, O.avail[q]) !== null) { lastK = O.avail[q]; break; }
+  const firstK = D.ta ? O.avail.find((k) => obsVal(D.ta, k) !== null) : undefined;
+  let p1 = null, dp3 = null;
+  if (lastK !== null) {
+    const per = Math.round(3600000 / O.stepMs), ks = [];
+    for (let k = lastK - per + 1; k <= lastK; k++) { const x = obsVal(D.p10, k); if (x !== null) ks.push(x); }
+    if (ks.length >= per - 1) p1 = ks.reduce((t, x) => t + x, 0);
+    else {
+      const j = Math.round((obsMs(lastK) - O.h0ms) / 3600000);
+      if (obsHMs(j) === obsMs(lastK)) p1 = obsVal(D.prec, j);
+    }
+    const p = obsVal(D.pres, lastK), k3 = lastK - Math.round(3 * 3600000 / O.stepMs);
+    let pPrev = null;
+    for (const d of [0, -1, 1, -2, 2]) { pPrev = obsVal(D.pres, k3 + d); if (pPrev !== null) break; }
+    if (p !== null && pPrev !== null) dp3 = p - pPrev;
+  }
+  const spanH = lastK !== null && firstK !== undefined ? ((lastK - firstK) * O.stepMs) / 3600000 : 0;
+  return {
+    lastK, lastMs: lastK !== null ? obsMs(lastK) : null, ta: obsVal(D.ta, lastK),
+    tmax: covered ? tmax : null, tmin: covered ? tmin : null, gust: covered ? gust : null,
+    prec: pn >= need ? psum : null, p1,
+    hr: obsVal(D.hr, lastK), pres: obsVal(D.pres, lastK), dp3,
+    d24: spanH >= 6 ? { v: D.ta[lastK] - D.ta[firstK], span: Math.round(spanH) } : null,
+  };
+}
+
+/** Valor de cada estación para el mapa y las clasificaciones (k: instante de 10 min). */
+function obsField(v, k) {
+  const O = state.obs, out = [];
+  const back = Math.round(3600000 / O.stepMs) - 1;   // vale el último dato de la hora anterior
+  for (const st of O.list) {
+    const D = O.data[st.id];
+    let z = null, ms = null;
+    if (v === "ta" || v === "hr") {
+      for (let q = k; q >= Math.max(0, k - back); q--) {
+        const x = obsVal(D[v], q);
+        if (x !== null) { z = x; ms = obsMs(q); break; }
+      }
+    } else {
+      const S = obsSummary(st.id);
+      if (v === "tamax" && S.tmax) { z = S.tmax.v; ms = S.tmax.ms; }
+      else if (v === "tamin" && S.tmin) { z = S.tmin.v; ms = S.tmin.ms; }
+      else if (v === "prec") { z = S.prec; }
+      else if (v === "vmax" && S.gust) { z = Math.round(S.gust.v * 3.6); ms = S.gust.ms; }
+      else if (v === "d24" && S.d24) { z = Math.round(S.d24.v * 10) / 10; }
+    }
+    if (z !== null && z !== undefined) out.push({ st, z, ms });
+  }
+  return out;
+}
+
+const OBS_DEFS = {
+  ta: { label: "Temperatura", unit: "°C", fmt: ".1f", hiT: "Más calor", loT: "Más frío" },
+  tamax: { label: "Máxima de las últimas 24 h", unit: "°C", fmt: ".1f", hiT: "Máximas más altas", loT: "Máximas más bajas" },
+  tamin: { label: "Mínima de las últimas 24 h", unit: "°C", fmt: ".1f", hiT: "Mínimas más altas", loT: "Mínimas más bajas" },
+  prec: { label: "Lluvia acumulada en 24 h", unit: "mm", fmt: ".1f", hiT: "Más lluvia", loT: null },
+  vmax: { label: "Racha máxima en 24 h", unit: "km/h", fmt: ".0f", hiT: "Rachas más fuertes", loT: null },
+  hr: { label: "Humedad relativa", unit: "%", fmt: ".0f", hiT: "Más húmedo", loT: "Más seco" },
+  d24: { label: "Cambio de temperatura en 24 h", unit: "°C", fmt: "+.1f", hiT: "Más se calienta", loT: "Más se enfría" },
+};
+
+function stopObsPlay() {
+  if (state.obsPlay) { clearInterval(state.obsPlay); state.obsPlay = null; }
+  const b = $("ah-play");
+  if (b) b.textContent = "▶";
+}
+
+async function runAhora() {
+  let O;
+  showLoader("Cargando la última hora…");
+  try { O = await loadObs(); } catch {
+    hideLoader();
+    $("ah-status").innerHTML = "No se han podido cargar las observaciones. Prueba de nuevo en unos minutos.";
+    return;
+  } finally { hideLoader(); }
+  const ageMin = Math.round((Date.now() - obsMs(O.kLast)) / 60000);
+  const spanH = Math.round(((O.kLast - O.avail[0]) * O.stepMs) / 3600000);
+  $("ah-status").innerHTML =
+    `<span class="live-dot${ageMin > 90 ? " stale" : ""}"></span>Última observación: <b>${madridLabel(obsMs(O.kLast))}</b> ` +
+    `(hora peninsular) · ${O.list.length} estaciones · datos cada 10 minutos de las últimas ${Math.min(24, spanH)} h`;
+  const sl = $("ah-hour");
+  sl.min = O.avail[0]; sl.max = O.kLast;
+  if (!state.obsHourTouched || +sl.value > O.kLast || +sl.value < O.avail[0]) sl.value = O.kLast;
+  runAhoraMap();
+  if (!state.obsSel || !O.data[state.obsSel]) {
+    const cur = state.station && O.data[state.station.json.id] ? state.station.json.id : null;
+    state.obsSel = cur || (O.data["3195"] ? "3195" : O.list[0].id);
+  }
+  renderObsStation(state.obsSel);
+}
+
+function runAhoraMap() {
+  const O = state.obs;
+  if (!O) return;
+  const v = $("ah-var").value, def = OBS_DEFS[v];
+  const inst = v === "ta" || v === "hr";
+  $("ah-hour-wrap").hidden = !inst;
+  const h = +$("ah-hour").value;
+  $("ah-hour-val").textContent = madridLabel(obsMs(h));
+  const pts = obsField(v, inst ? h : O.kLast);
+  if (!pts.length) { Plotly.purge("plot-ahora-mapa"); return; }
+  const zs = pts.map((p) => p.z).sort((a, b) => a - b);
+  let cs, cmin, cmax;
+  if (v === "prec") { cs = PREC_SCALE; cmin = 0; cmax = Math.max(10, quantile(zs, 0.98)); }
+  else if (v === "vmax") { cs = WIND_SCALE; cmin = 0; cmax = Math.max(60, quantile(zs, 0.98)); }
+  else if (v === "hr") { cs = HR_SCALE; cmin = 20; cmax = 100; }
+  else if (v === "d24") { cs = DIV_TEMP; const a = Math.max(3, Math.abs(quantile(zs, 0.02)), Math.abs(quantile(zs, 0.98))); cmin = -a; cmax = a; }
+  else {
+    cs = TEMP_SCALE;
+    // escala fija por día para que la animación no cambie de colores
+    const all = [];
+    for (const id of O.ids) {
+      const arr = O.data[id][v === "ta" ? "ta" : v];
+      if (arr) for (const x of arr) if (x !== null) all.push(x);
+    }
+    all.sort((a, b) => a - b);
+    cmin = Math.floor(quantile(all, 0.01)); cmax = Math.ceil(quantile(all, 0.99));
+  }
+  // en lluvia, las estaciones secas debajo y pequeñas
+  if (v === "prec") pts.sort((a, b) => a.z - b.z);
+  const canary = (p) => p.st.lat < 30;
+  const mk = (list, geo, showscale) => ({
+    type: "scattergeo", geo, lat: list.map((p) => p.st.lat), lon: list.map((p) => p.st.lon),
+    text: list.map((p) => `<b>${p.st.name}</b>` + (p.ms ? ` · ${madridHour(p.ms)}` : "")),
+    customdata: list.map((p) => [p.z, p.st.id]),
+    hovertemplate: `%{text}<br>%{customdata[0]:${def.fmt}} ${def.unit}<extra></extra>`,
+    mode: "markers",
+    marker: { color: list.map((p) => p.z), colorscale: cs, cmin, cmax,
+              size: list.map((p) => (v === "prec" && p.z < 0.1 ? 5 : 9)),
+              line: { color: TH.card, width: 0.6 }, opacity: 0.95,
+              showscale, colorbar: showscale ? { title: { text: def.unit }, thickness: 12, len: 0.6, outlinewidth: 0 } : undefined },
+  });
+  const geoBase = {
+    projection: { type: "mercator" }, resolution: 50, showframe: false,
+    showland: true, landcolor: TH.card2, showocean: true, oceancolor: TH.card, bgcolor: TH.card,
+    showcountries: true, countrycolor: TH.border, coastlinecolor: TH.border, showlakes: false,
+  };
+  const when = inst ? madridLabel(obsMs(h)) : `24 h hasta ${madridLabel(obsMs(O.kLast))}`;
+  const layout = baseLayout(`${def.label} · ${when}`);
+  layout.margin = { l: 0, r: 0, t: 44, b: 0 };
+  layout.geo = { ...geoBase, lataxis: { range: [35.2, 44.2] }, lonaxis: { range: [-10.2, 4.8] }, domain: { x: [0, 1], y: [0, 1] } };
+  layout.geo2 = { ...geoBase, lataxis: { range: [27.5, 29.6] }, lonaxis: { range: [-18.4, -13.2] },
+                  domain: { x: [0, 0.24], y: [0, 0.19] }, showframe: true, framecolor: TH.border };
+  layout.showlegend = false;
+  const div = $("plot-ahora-mapa");
+  Plotly.react(div, [mk(pts.filter((p) => !canary(p)), "geo", true), mk(pts.filter(canary), "geo2", false)], layout, PLOTLY_CFG);
+  if (div.removeAllListeners) div.removeAllListeners("plotly_click");
+  div.on("plotly_click", (ev) => {
+    const p = ev.points && ev.points[0];
+    if (p && p.customdata) { renderObsStation(p.customdata[1]); $("ah-station").scrollIntoView({ behavior: "smooth", block: "start" }); }
+  });
+
+  // clasificaciones
+  const row = (p, k) => `<tr data-id="${p.st.id}"><td>${k + 1}</td><td>${p.st.name}` +
+    `${p.st.province ? ` <span class="muted">${titleCase(p.st.province)}</span>` : ""}</td>` +
+    `<td><b>${v === "d24" ? sgnf(p.z) : p.z.toFixed(def.fmt.endsWith("0f") ? 0 : 1).replace(".", ",")} ${def.unit}</b></td>` +
+    `<td class="muted">${p.ms ? madridHour(p.ms) : ""}</td></tr>`;
+  const desc = [...pts].sort((a, b) => b.z - a.z), asc = [...pts].sort((a, b) => a.z - b.z);
+  $("ah-rank-hi-t").textContent = def.hiT;
+  $("ah-rank-hi").querySelector("tbody").innerHTML = desc.slice(0, 10).map(row).join("");
+  $("ah-rank-lo-wrap").hidden = !def.loT;
+  if (def.loT) {
+    $("ah-rank-lo-t").textContent = def.loT;
+    $("ah-rank-lo").querySelector("tbody").innerHTML = asc.slice(0, 10).map(row).join("");
+  }
+  const med = quantile(zs, 0.5);
+  $("ah-note").textContent =
+    `${pts.length} estaciones con dato. Mediana: ${med.toFixed(def.fmt.endsWith("0f") ? 0 : 1).replace(".", ",")} ${def.unit}. ` +
+    "Datos horarios de las estaciones automáticas de AEMET, sin validar: puede haber valores erróneos. " +
+    "Cada estación muestra su último dato de la hora anterior (muchas envían los 10 minutos en bloque cada hora). " +
+    "Las máximas y mínimas incluyen los extremos de cada hora y exigen dato en al menos el 75 % de las horas. " +
+    "Las horas son peninsulares (en Canarias, una menos). " +
+    "Pulsa una estación del mapa o de las tablas para ver sus últimas 24 horas.";
+}
+
+function renderObsStation(id) {
+  const O = state.obs;
+  if (!O || !O.data[id]) return;
+  state.obsSel = id;
+  const D = O.data[id], m = O.meta[id], S = obsSummary(id);
+  const name = obsName(id);
+  const inIdx = state.index.stations.find((s) => s.id === id);
+  $("ah-st-name").textContent = name;
+  $("ah-st-sub").textContent = [inIdx ? titleCase(inIdx.province) : null, m[3] !== null ? `${m[3]} m` : null, `indicativo ${id}`]
+    .filter(Boolean).join(" · ");
+  const link = $("ah-st-clim");
+  link.hidden = !inIdx;
+  link.dataset.id = id;
+
+  const tiles = [];
+  const tile = (cls, label, val, unit, foot) =>
+    tiles.push(`<div class="rec-tile day-tile ${cls}"><div class="rl">${label}</div>` +
+      `<div class="rv">${val}<small>${val === "—" ? "" : ` ${unit}`}</small></div><div class="rd">${foot}</div></div>`);
+  const when = (e) => (e.hourly ? `entre las ${madridHour(e.ms - 3600000)} y las ${madridHour(e.ms)}` : `a las ${madridHour(e.ms)}`);
+  tile("t-tmed", "Temperatura", S.ta !== null ? nf1(S.ta) : "—", "°C",
+    S.lastMs ? `${madridLabel(S.lastMs)}` +
+      (S.d24 ? ` · <span class="${S.d24.v >= 0 ? "up" : "down"}">${sgnf(S.d24.v)} °C</span> en ${S.d24.span} h` : "") : "sin dato reciente");
+  tile("t-tmax", "Máxima 24 h", S.tmax ? nf1(S.tmax.v) : "—", "°C", S.tmax ? when(S.tmax) : "");
+  tile("t-tmin", "Mínima 24 h", S.tmin ? nf1(S.tmin.v) : "—", "°C", S.tmin ? when(S.tmin) : "");
+  if (D.prec || D.p10) {
+    tile("t-prec", "Lluvia 24 h", S.prec !== null ? nf1(S.prec) : "—", "mm",
+      S.p1 !== null ? `${nf1(S.p1)} mm en la última hora` : "");
+  }
+  if (D.vmax) {
+    tile("t-wind", "Racha máxima 24 h", S.gust ? String(Math.round(S.gust.v * 3.6)) : "—", "km/h",
+      S.gust ? `${when(S.gust)}${S.gust.dir !== null ? ` · del ${rumbo(S.gust.dir)}` : ""}` : "");
+  }
+  if (D.hr) tile("t-prec", "Humedad", S.hr !== null ? String(Math.round(S.hr)) : "—", "%", "ahora");
+  if (S.pres !== null) {
+    tile("t-sol", "Presión", nf1(S.pres).replace(",0", ""), "hPa",
+      S.dp3 !== null ? `${sgnf(S.dp3)} hPa en 3 h` : "en la estación");
+  }
+  $("ah-tiles").innerHTML = tiles.join("");
+
+  // ---- gráfico de 24 h: trazo de 10 min, huecos de más de 75 min sin unir ----
+  const ks = [];
+  for (let k = O.avail[0]; k <= O.kLast; k++) ks.push(k);
+  const ser = (arr, idxs, msOf, mult = 1) => {
+    const x = [], y = [];
+    let prev = null;
+    for (const i of idxs) {
+      const val = obsVal(arr, i);
+      if (val === null) continue;
+      const ms = msOf(i);
+      if (prev !== null && ms - prev > 75 * 60000) { x.push(madridStr(prev + 60000)); y.push(null); }
+      x.push(madridStr(ms)); y.push(Math.round(val * mult * 10) / 10);
+      prev = ms;
+    }
+    return { x, y };
+  };
+  const rows = [{ key: "t", h: 0.42 }];
+  if (D.prec || D.p10 || D.hr) rows.push({ key: "p", h: 0.2 });
+  if (D.vv || D.vmax) rows.push({ key: "w", h: 0.22 });
+  if (D.pres) rows.push({ key: "pr", h: 0.16 });
+  const gap = 0.06, tot = rows.reduce((t, r) => t + r.h, 0) + gap * (rows.length - 1);
+  const layout = baseLayout(`${name} · últimas 24 horas`);
+  layout.margin = { l: 60, r: 55, t: 50, b: 40 };
+  layout.legend = { orientation: "h", y: -0.07 };
+  layout.hovermode = "x unified";
+  layout.annotations = [];
+  let top = 1;
+  rows.forEach((r, k) => {
+    const hgt = r.h / tot;
+    r.ya = k === 0 ? "y" : `y${k + 1}`;
+    r.yk = k === 0 ? "yaxis" : `yaxis${k + 1}`;
+    layout[r.yk] = { ...layout.yaxis, domain: [top - hgt, top], anchor: "x" };
+    top -= hgt + gap / tot;
+  });
+  layout.xaxis = { ...layout.xaxis, anchor: rows[rows.length - 1].ya, type: "date", tickformat: "%H:%M\n%-d %b",
+    range: [madridStr(obsMs(O.avail[0]) - 15 * 60000), madridStr(obsMs(O.kLast) + 15 * 60000)] };
+  const C = { mx: VAR_COLORS.tmax, mn: VAR_COLORS.tmin, p: VAR_COLORS.prec, w: VAR_COLORS.dtr };
+  const tenMs = (k) => obsMs(k), hMs = (j) => obsHMs(j);
+  const traces = [];
+  for (const r of rows) {
+    if (r.key === "t") {
+      layout[r.yk].ticksuffix = " °C";
+      const bx = ser(D.tamax, O.hAvail, hMs), bn = ser(D.tamin, O.hAvail, hMs);
+      if (bx.x.length) {
+        traces.push({ x: bx.x, y: bx.y, yaxis: r.ya, mode: "lines", line: { width: 0, shape: "vh" }, hoverinfo: "skip", showlegend: false });
+        traces.push({ x: bn.x, y: bn.y, yaxis: r.ya, mode: "lines", line: { width: 0, shape: "vh" }, fill: "tonexty",
+          fillcolor: hexToRgba(C.mx, 0.16), name: "mín–máx horario", hoverinfo: "skip" });
+      }
+      const t = ser(D.ta, ks, tenMs);
+      traces.push({ x: t.x, y: t.y, yaxis: r.ya, mode: "lines+markers", name: "temperatura", line: { color: C.mx, width: 2.4 },
+        marker: { size: 3.5 }, hovertemplate: "%{y:.1f} °C" });
+      if (S.tmax) layout.annotations.push({ x: madridStr(S.tmax.ms), y: S.tmax.v, yref: r.ya, text: `${nf1(S.tmax.v)}°`,
+        showarrow: false, yshift: 14, font: { color: C.mx } });
+      if (S.tmin) layout.annotations.push({ x: madridStr(S.tmin.ms), y: S.tmin.v, yref: r.ya, text: `${nf1(S.tmin.v)}°`,
+        showarrow: false, yshift: -14, font: { color: C.mn } });
+    } else if (r.key === "p") {
+      layout[r.yk].ticksuffix = " mm";
+      const px = [], py = [];
+      for (const j of O.hAvail) { const p = hourPrec(D, j); if (p !== null) { px.push(madridStr(obsHMs(j) - 1800000)); py.push(p); } }
+      layout[r.yk].range = [0, Math.max(2, ...py) * 1.15];
+      if (py.length) traces.push({ x: px, y: py, yaxis: r.ya, type: "bar", name: "lluvia (por hora)", width: 3600000 * 0.85,
+        marker: { color: hexToRgba(C.p, 0.8) }, hovertemplate: "%{y:.1f} mm en la hora" });
+      if (D.hr) {
+        const k2 = rows.length + 1, hrS = ser(D.hr, ks, tenMs);
+        layout[`yaxis${k2}`] = { ...layout.yaxis, overlaying: r.ya, side: "right", range: [0, 105], ticksuffix: " %",
+          showgrid: false, anchor: "x" };
+        traces.push({ x: hrS.x, y: hrS.y, yaxis: `y${k2}`, mode: "lines", name: "humedad",
+          line: { color: VAR_COLORS.tmin, width: 1.6, dash: "dot" }, hovertemplate: "%{y:.0f} %" });
+      }
+    } else if (r.key === "w") {
+      layout[r.yk].ticksuffix = " km/h";
+      layout[r.yk].rangemode = "tozero";
+      const g = ser(D.vmax, ks, tenMs, 3.6), w = ser(D.vv, ks, tenMs, 3.6);
+      traces.push({ x: g.x, y: g.y, yaxis: r.ya, mode: "markers", name: "racha", marker: { color: C.w, size: 5, symbol: "triangle-up" },
+        hovertemplate: "racha %{y:.0f} km/h" });
+      traces.push({ x: w.x, y: w.y, yaxis: r.ya, mode: "lines", name: "viento medio", line: { color: hexToRgba(C.w, 0.6), width: 2 },
+        hovertemplate: "medio %{y:.0f} km/h" });
+      // flechas de dirección solo en las horas en punto, para no saturar
+      const hk = ks.filter((k) => obsMs(k) % 3600000 === 0 && obsVal(D.vv, k) !== null && obsVal(D.dv, k) !== null);
+      traces.push({ x: hk.map((k) => madridStr(obsMs(k))), y: hk.map((k) => Math.round(D.vv[k] * 36) / 10), yaxis: r.ya,
+        mode: "markers", name: "dirección", customdata: hk.map((k) => rumbo(D.dv[k])),
+        marker: { size: 12, symbol: "arrow", angle: hk.map((k) => (D.dv[k] + 180) % 360), color: C.w, line: { width: 0 } },
+        hovertemplate: "del %{customdata}" });
+    } else if (r.key === "pr") {
+      layout[r.yk].ticksuffix = " hPa";
+      const pr = ser(D.pres, ks, tenMs);
+      traces.push({ x: pr.x, y: pr.y, yaxis: r.ya, mode: "lines", name: "presión", line: { color: TH.muted, width: 2 },
+        hovertemplate: "%{y:.1f} hPa" });
+    }
+  }
+  const div = $("plot-ahora-st");
+  div.style.height = `${260 + rows.length * 120}px`;
+  EXPORT_SIZES["plot-ahora-st"] = [1600, 600 + rows.length * 300];
+  Plotly.newPlot(div, traces, layout, PLOTLY_CFG);
+  document.querySelectorAll("#ah-rank-hi tr, #ah-rank-lo tr").forEach((tr) => tr.classList.toggle("hl", tr.dataset.id === id));
+}
+
+// ==========================================================
 // PRODUCTO: Dos estaciones
 // ==========================================================
 
@@ -3567,6 +4016,8 @@ const EXPORT_SIZES = {
   "plot-dia-mes": [1600, 900],
   "plot-dia-anios": [1600, 800],
   "plot-dia-mesanios": [1600, 800],
+  "plot-ahora-mapa": [1500, 1300],
+  "plot-ahora-st": [1600, 1500],
 };
 
 function loadImage(src) {
@@ -3641,7 +4092,8 @@ async function exportActivePanel(opts = {}) {
       (panel.id === "panel-nacional" ? `-${state.natView || "evol"}` : "") +
       (panel.id === "panel-dia" && state.diaDate ? `-${state.diaDate}` : "") +
       (opts.suffix ? `-${opts.suffix}` : "");
-    const prefix = state.station && panel.id !== "panel-nacional" ? state.station.json.id : "espana";
+    const prefix = panel.id === "panel-ahora" ? `ahora-${state.obsSel || "espana"}`
+      : state.station && panel.id !== "panel-nacional" ? state.station.json.id : "espana";
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `${prefix}_${name}.png`;
@@ -3666,7 +4118,7 @@ Object.assign(TAB_RUNNERS, {
   indices: runIndices, rachas: runStreaks, comparador: runComparator,
   olas: runWaves, records: runRecords, periodos: runPeriodos, nacional: runNacional,
   distribucion: runDistribution, calendario: runCalendar, duelo: runDuel,
-  retorno: runRetorno, spi: runSPI, dia: runDia,
+  retorno: runRetorno, spi: runSPI, dia: runDia, ahora: runAhora,
 });
 
 const QUICK_PICKS = [
@@ -3702,9 +4154,9 @@ function bindControls() {
   }
   for (const name of Object.keys(TAB_RUNNERS)) {
     $(`panel-${name}`).querySelectorAll(".controls select, .controls input").forEach((el) => {
-      if (el.id === "du-search" || el.id === "dia-date") return;
+      if (["du-search", "dia-date", "ah-hour", "ah-search"].includes(el.id)) return;
       el.addEventListener("change", () => {
-        if (state.station || name === "nacional") runPanel(name);
+        if (state.station || NO_STATION_TABS.has(name)) runPanel(name);
       });
     });
   }
@@ -3746,6 +4198,28 @@ function bindControls() {
   for (const id of ["rt-a1", "rt-a2", "rt-b1", "rt-b2"]) $(id).addEventListener("change", () => { state.rtTouched = true; });
   $("rt-var").addEventListener("change", () => { $("rt-val").value = ""; });
   $("dia-date").addEventListener("change", () => setDayDate($("dia-date").value));
+  $("ah-hour").addEventListener("input", () => { state.obsHourTouched = true; safeRun(runAhoraMap); });
+  $("ah-play").addEventListener("click", () => {
+    if (state.obsPlay) { stopObsPlay(); return; }
+    const sl = $("ah-hour");
+    state.obsHourTouched = true;
+    if (+sl.value >= +sl.max) sl.value = sl.min;
+    $("ah-play").textContent = "❚❚";
+    state.obsPlay = setInterval(() => {
+      if (+sl.value >= +sl.max) { stopObsPlay(); return; }
+      sl.value = +sl.value + 1;
+      safeRun(runAhoraMap);
+    }, 220);
+  });
+  for (const t of ["ah-rank-hi", "ah-rank-lo"]) {
+    $(t).addEventListener("click", (e) => {
+      const tr = e.target.closest("tr[data-id]");
+      if (!tr) return;
+      renderObsStation(tr.dataset.id);
+      $("ah-station").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+  $("ah-st-clim").addEventListener("click", (e) => selectStation(e.currentTarget.dataset.id, "dia"));
   $("dia-prev").addEventListener("click", () => shiftDay(-1));
   $("dia-next").addEventListener("click", () => shiftDay(1));
   $("dia-prev-y").addEventListener("click", () => gotoDayYear(+state.diaDate.slice(0, 4) - 1));
@@ -3841,6 +4315,11 @@ async function init() {
     runDuel();
   });
   $("go-national").addEventListener("click", goNational);
+  $("go-ahora").addEventListener("click", () => { showApp(); activateTab("ahora"); });
+  makeSearch($("ah-search"), $("ah-results"), (id) => renderObsStation(id), {
+    list: () => (state.obs ? state.obs.list : []),
+    meta: (st) => [titleCase(st.province), st.altitude !== null ? `${st.altitude} m` : null, st.id].filter(Boolean).join(" · "),
+  });
   renderQuickPicks();
   routeFromHash();
   window.addEventListener("hashchange", () => {

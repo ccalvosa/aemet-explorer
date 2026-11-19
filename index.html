@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=43">
+<link rel="stylesheet" href="css/style.css?v=44">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -74,7 +74,8 @@
     <div class="feature"><div class="feature-ico">🗺️</div><h3>Toda España</h3><p>Mapa de anomalías, regiones, años más cálidos y récords de toda la red.</p></div>
   </div>
 
-  <p class="hero-alt">¿Prefieres la visión general? <button class="link-btn" id="go-national">Ver el clima de toda España →</button></p>
+  <p class="hero-alt">¿Prefieres la visión general? <button class="link-btn" id="go-national">Ver el clima de toda España →</button>
+    · <button class="link-btn" id="go-ahora">Qué está pasando ahora →</button></p>
   <p class="hero-alt" style="margin-top:0.4rem">Todo se calcula en tu navegador. Ningún dato sale de esta página.</p>
 </section>
 
@@ -113,6 +114,9 @@
 
   <div class="workspace">
     <nav class="tabs" id="tabs" aria-label="Análisis">
+      <div class="nav-group">Ahora</div>
+      <button class="tab" data-tab="ahora"><span class="ico">🛰️</span>Última hora</button>
+
       <div class="nav-group">Día y año</div>
       <button class="tab" data-tab="dia"><span class="ico">🔎</span>Un día cualquiera</button>
       <button class="tab active" data-tab="anio"><span class="ico">📅</span>Año en curso</button>
@@ -141,6 +145,62 @@
 
     <main class="main">
       <button id="export-png" class="btn-export" title="Descargar los gráficos de esta sección como PNG, listos para redes">⤓ PNG</button>
+
+    <!-- ---- TAB: ÚLTIMA HORA ---- -->
+    <section id="panel-ahora" class="panel card" hidden>
+      <header class="panel-head"><h2>Última hora</h2><p>Lo que están midiendo ahora las estaciones automáticas de AEMET: observaciones cada 10 minutos durante las últimas 24 horas. Se actualiza cada 20 minutos.</p></header>
+      <p id="ah-status" class="live-status"></p>
+      <div class="controls">
+        <div class="control control-wide">
+          <label class="field-label" for="ah-var">Mapa</label>
+          <select id="ah-var">
+            <option value="ta" selected>Temperatura</option>
+            <option value="tamax">Máxima de las últimas 24 h</option>
+            <option value="tamin">Mínima de las últimas 24 h</option>
+            <option value="prec">Lluvia acumulada en 24 h</option>
+            <option value="vmax">Racha máxima en 24 h</option>
+            <option value="hr">Humedad relativa</option>
+            <option value="d24">Cambio de temperatura en 24 h</option>
+          </select>
+        </div>
+        <div class="control control-wide" id="ah-hour-wrap">
+          <label class="field-label" for="ah-hour">Hora: <span id="ah-hour-val" class="mono"></span></label>
+          <div class="inline">
+            <button class="icon-btn sm" id="ah-play" title="Reproducir las últimas 24 horas, cada 10 minutos">▶</button>
+            <input type="range" id="ah-hour" min="0" max="23" value="23" step="1">
+          </div>
+        </div>
+      </div>
+      <div class="split">
+        <div id="plot-ahora-mapa" class="plot plot-map"></div>
+        <div>
+          <h3 class="block-title" id="ah-rank-hi-t">Más calor</h3>
+          <div class="table-wrap table-full"><table id="ah-rank-hi" class="data-table rank-table"><tbody></tbody></table></div>
+          <div id="ah-rank-lo-wrap">
+            <h3 class="block-title" id="ah-rank-lo-t">Más frío</h3>
+            <div class="table-wrap table-full"><table id="ah-rank-lo" class="data-table rank-table"><tbody></tbody></table></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="day-card" id="ah-station">
+        <div class="day-card-head">
+          <div>
+            <p class="eyebrow" id="ah-st-name"></p>
+            <p class="day-card-sub" id="ah-st-sub"></p>
+          </div>
+          <div class="search-box ah-search">
+            <input type="text" id="ah-search" class="search-input" placeholder="Buscar otra estación automática…"
+                   autocomplete="off" spellcheck="false" aria-label="Buscar estación automática">
+            <ul id="ah-results" class="search-results" hidden></ul>
+          </div>
+        </div>
+        <div id="ah-tiles" class="rec-grid day-grid"></div>
+        <p class="ah-links"><button class="link-btn" id="ah-st-clim" hidden>Ver hoy frente a su climatología →</button></p>
+      </div>
+      <div id="plot-ahora-st" class="plot"></div>
+      <p id="ah-note" class="note"></p>
+    </section>
 
     <!-- ---- TAB: UN DÍA ---- -->
     <section id="panel-dia" class="panel card" hidden>
@@ -859,6 +919,6 @@
   <span>Hecho por <a href="https://x.com/MeteoZGZ" target="_blank" rel="noopener">@MeteoZGZ</a></span>
 </footer>
 
-<script src="js/app.js?v=43"></script>
+<script src="js/app.js?v=44"></script>
 </body>
 </html>
