@@ -15,7 +15,7 @@ Los análisis se agrupan en cinco bloques:
 
 | Bloque | Análisis |
 |---|---|
-| Este año | Año en curso (frente a P5–P95 y récords previos) · Calendario de anomalías |
+| Día y año | Un día cualquiera (ficha del día con anomalía, percentil, puesto y récords de todas las variables frente a la climatología de la fecha y del mes; el día en la historia; el mes día a día; la fecha y el mes año a año; ficha descargable para compartir y enlace directo `#id/dia/AAAA-MM-DD`) · Año en curso (frente a P5–P95 y récords previos) · Calendario de anomalías |
 | Tendencias | Evolución anual · Warming stripes (temperatura, precipitación u horas de sol) · Índices climáticos (noches tropicales, heladas, primer 30/35/40 °C, duración del verano…) · Récords por década |
 | Extremos | Rachas (condición diaria o período seco) · Olas de calor y de frío · Períodos de retorno (GEV por L-momentos, comparando dos épocas) · Sequía (SPI de 1 a 24 meses, con calendario) |
 | Comparar | Comparador de años · Comparar períodos (día a día o distribución) · Dos estaciones |

@@ -308,13 +308,17 @@ function makeSearch(inputEl, listEl, onPick) {
 // Selección de estación, placa y efemérides
 // ==========================================================
 
-async function loadRecent() {
-  if (state.recentTried) return;
-  state.recentTried = true;
-  try {
-    const r = await fetch(`${DATA_URL}/recent.json`);
-    if (r.ok) state.recent = await r.json();
-  } catch { /* sin recent: la web funciona con el histórico */ }
+/** Carga recent.json una sola vez; todas las llamadas esperan a la misma descarga. */
+function loadRecent() {
+  if (!state.recentP) {
+    state.recentP = (async () => {
+      try {
+        const r = await fetch(`${DATA_URL}/recent.json`);
+        if (r.ok) state.recent = await r.json();
+      } catch { /* sin recent: la web funciona con el histórico */ }
+    })();
+  }
+  return state.recentP;
 }
 
 /** Fusiona la ventana reciente sobre el JSON histórico (recent manda). */
@@ -376,7 +380,8 @@ function showApp() {
 
 function updateHash() {
   const id = state.station ? state.station.json.id : "espana";
-  const h = `#${encodeURIComponent(id)}/${currentTab()}`;
+  const tab = currentTab();
+  const h = `#${encodeURIComponent(id)}/${tab}${tab === "dia" && state.diaDate ? `/${state.diaDate}` : ""}`;
   if (location.hash !== h) history.replaceState(null, "", h);
 }
 
@@ -406,9 +411,10 @@ function goNational() {
 }
 
 function routeFromHash() {
-  const m = /^#\/?([^/]+)(?:\/([a-z]+))?/.exec(location.hash);
+  const m = /^#\/?([^/]+)(?:\/([a-z]+))?(?:\/(\d{4}-\d{2}-\d{2}))?/.exec(location.hash);
   if (!m) return false;
   const id = decodeURIComponent(m[1]);
+  if (m[3]) state.diaDate = m[3];
   if (id === "espana") { goNational(); return true; }
   if (!state.index.stations.some((s) => s.id === id)) return false;
   selectStation(id, m[2]);
@@ -575,7 +581,8 @@ function renderEphemeris() {
       const verdict = pct >= 95 ? "excepcionalmente cálida 🔥" : pct >= 80 ? "más cálida de lo normal"
         : pct <= 5 ? "excepcionalmente fría 🥶" : pct <= 20 ? "más fresca de lo normal" : "dentro de lo normal";
       box.innerHTML = `Último dato (${niceDate(lastIdx)}): máxima de <b>${nf1(tmax[lastIdx])} °C</b>, ` +
-        `${verdict} — percentil ${pct} de ${refA}–${refB} para esas fechas.`;
+        `${verdict} — percentil ${pct} de ${refA}–${refB} para esas fechas. ` +
+        `<button class="link-btn" data-day="${fmtDate(S.startMs, lastIdx)}">Ver el día completo →</button>`;
       box.hidden = false;
     }
   }
@@ -764,7 +771,15 @@ function runAnio() {
   layout.yaxis.title = { text: VAR_UNITS[v] };
   layout.legend = { orientation: "h", y: -0.12 };
   Plotly.newPlot("plot-anio", traces, layout, PLOTLY_CFG);
-  $("an-note").textContent = note;
+  // pulsar un día del año elegido abre su ficha en «Un día»
+  $("plot-anio").on("plotly_click", (ev) => {
+    const p = ev.points && ev.points.find((q) => q.data.name === String(year));
+    if (!p) return;
+    const [, mm, dd] = String(p.x).slice(0, 10).split("-");
+    const yy = hydro && +mm >= 10 ? year - 1 : year;
+    if (dayIndex(S, `${yy}-${mm}-${dd}`) >= 0) openDay(`${yy}-${mm}-${dd}`);
+  });
+  $("an-note").textContent = note + (note ? " " : "") + "Pulsa un día de la línea del año para ver su ficha completa.";
 }
 
 // ==========================================================
@@ -1520,6 +1535,12 @@ function runCalendar() {
     colorbar: { title: "°C", thickness: 14, outlinecolor: TH.grid },
     hoverongaps: false,
   }], layout, PLOTLY_CFG);
+  $("plot-calendario").on("plotly_click", (ev) => {
+    const p = ev.points && ev.points[0];
+    if (!p || p.z === null || p.z === undefined) return;
+    const mo = MESES.indexOf(p.y);
+    if (mo > 0) openDay(`${year}-${String(mo).padStart(2, "0")}-${String(p.x).padStart(2, "0")}`);
+  });
   $("ca-note").textContent = modeAnom
     ? "Anomalía respecto a la media de referencia por fecha (ventana ±7 días)." : "";
 }
@@ -2738,6 +2759,725 @@ function runSPI() {
 }
 
 // ==========================================================
+// PRODUCTO: Un día cualquiera — un día frente a su climatología
+// ==========================================================
+
+// fem: concordancia de los ordinales ("la 2.ª más alta" / "el 2.º más soleado")
+const DAY_VARS = {
+  tmax: { label: "Máxima", unit: "°C", cls: "t-tmax", agg: "mean", fem: true, hi: "más alta", lo: "más baja",
+          mHi: "más cálido", mLo: "más frío", mLabel: "Máxima media" },
+  tmin: { label: "Mínima", unit: "°C", cls: "t-tmin", agg: "mean", fem: true, hi: "más alta", lo: "más baja",
+          mHi: "más cálido", mLo: "más frío", mLabel: "Mínima media" },
+  tmed: { label: "Media", unit: "°C", cls: "t-tmed", agg: "mean", fem: true, hi: "más alta", lo: "más baja",
+          mHi: "más cálido", mLo: "más frío", mLabel: "Temperatura media" },
+  prec: { label: "Precipitación", unit: "mm", cls: "t-prec", agg: "sum", fem: true, hi: "más alta", lo: "más baja",
+          mHi: "más lluvioso", mLo: "más seco", mLabel: "Precipitación total" },
+  racha: { label: "Racha máxima", unit: "km/h", cls: "t-wind", agg: "max", fem: true, hi: "más fuerte", lo: "más floja",
+           mHi: "más ventoso", mLo: "menos ventoso", mLabel: "Racha más fuerte" },
+  sol: { label: "Sol", unit: "h", cls: "t-sol", agg: "sum", fem: false, hi: "más soleado", lo: "menos soleado",
+         mHi: "más soleado", mLo: "menos soleado", mLabel: "Horas de sol" },
+};
+const DIAS_SEMANA = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const dayColor = (v) => (v === "racha" ? VAR_COLORS.dtr : v === "sol" ? (cssVar("--sol") || "#f08c00") : VAR_COLORS[v]);
+const ord = (r, fem) => `${r}.${fem ? "ª" : "º"}`;
+const sgnf = (x, d = 1) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(d).replace(".", ",")}`;
+const pctTxt = (p) => (p >= 99.5 ? ">99" : p < 0.5 ? "<1" : String(Math.round(p)));
+const daysInMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+/** Serie de la variable en unidades de la ficha (racha en km/h). Cacheada por estación. */
+function dayValues(S, v) {
+  const raw = S.json.data[v];
+  if (!raw) return null;
+  if (v !== "racha") return raw;
+  if (!S._rachaKmh) S._rachaKmh = raw.map((x) => (x === null ? null : Math.round(x * 36) / 10));
+  return S._rachaKmh;
+}
+
+function dayIndex(S, iso) {
+  const t = Date.parse(`${iso}T00:00:00Z`);
+  if (!Number.isFinite(t)) return -1;
+  const i = Math.round((t - S.startMs) / MS_DAY);
+  return i >= 0 && i < S.md.length ? i : -1;
+}
+
+/** Último día con Tmax, Tmin o precipitación. */
+function lastDataIndex(S) {
+  const D = S.json.data;
+  for (let i = S.md.length - 1; i >= 0; i--) {
+    if ((D.tmax && D.tmax[i] !== null) || (D.tmin && D.tmin[i] !== null) || (D.prec && D.prec[i] !== null)) return i;
+  }
+  return S.md.length - 1;
+}
+
+function pctRank(sorted, x) {
+  if (!sorted.length) return NaN;
+  let lt = 0, eq = 0;
+  for (const u of sorted) { if (u < x) lt++; else if (u === x) eq++; else break; }
+  return (100 * (lt + 0.5 * eq)) / sorted.length;
+}
+
+/**
+ * Estadísticos de una variable para el día i:
+ *  pool      valores del período normal en ±W días alrededor de la fecha (climatología del día)
+ *  monthPool valores del período normal en todo el mes
+ *  sameDay   la misma fecha en todos los años [{y, v, i}]
+ *  monthAll  todos los valores de ese mes en toda la serie (récords del mes)
+ */
+function dayStats(S, v, i, W, refA, refB) {
+  const vals = dayValues(S, v);
+  if (!vals) return null;
+  const md = S.md[i], mo = Math.floor(md / 100);
+  const p0 = MD_IDX_365.get(md === 229 ? 228 : md);
+  const pool = [], monthPool = [], sameDay = [], monthAll = [];
+  let absHi = -Infinity, absLo = Infinity;
+  for (let j = 0; j < vals.length; j++) {
+    const u = vals[j];
+    if (u === null) continue;
+    const m = S.md[j], y = S.years[j];
+    if (u > absHi) absHi = u;
+    if (u < absLo) absLo = u;
+    if (m === md) sameDay.push({ y, v: u, i: j });
+    if (Math.floor(m / 100) !== mo) {
+      if (y < refA || y > refB) continue;
+    } else {
+      monthAll.push(u);
+      if (y >= refA && y <= refB) monthPool.push(u);
+    }
+    if (y < refA || y > refB) continue;
+    let d = Math.abs(MD_IDX_365.get(m === 229 ? 228 : m) - p0);
+    d = Math.min(d, 365 - d);
+    if (d <= W) pool.push(u);
+  }
+  const num = (a, b) => a - b;
+  pool.sort(num); monthPool.sort(num); monthAll.sort(num);
+  return { v, x: vals[i], pool, monthPool, sameDay, monthAll, absHi, absLo, md, mo };
+}
+
+/** Puesto de x entre los valores (1 = el más alto / el más bajo) y empates. */
+function rankOf(list, x) {
+  let gt = 0, lt = 0, eq = 0;
+  for (const u of list) { if (u > x) gt++; else if (u < x) lt++; else eq++; }
+  return { hi: gt + 1, lo: lt + 1, ties: eq - 1, n: list.length };
+}
+
+/** Agregado de un mes (días 1..dEnd) para cada año. Map(año → valor) solo con cobertura suficiente. */
+function monthAggregate(S, v, mo, dEnd) {
+  const vals = v === "raindays" ? S.json.data.prec : dayValues(S, v);
+  if (!vals) return new Map();
+  const agg = v === "raindays" ? "count" : DAY_VARS[v].agg;
+  const g = new Map();
+  for (let j = 0; j < vals.length; j++) {
+    const m = S.md[j];
+    if (Math.floor(m / 100) !== mo || m % 100 > dEnd) continue;
+    const u = vals[j];
+    if (u === null) continue;
+    const y = S.years[j];
+    let o = g.get(y);
+    if (!o) { o = { sum: 0, n: 0, max: -Infinity, cnt: 0 }; g.set(y, o); }
+    o.sum += u; o.n++;
+    if (u > o.max) o.max = u;
+    if (u >= 1) o.cnt++;
+  }
+  const minCov = agg === "mean" || agg === "max" ? 0.8 : 0.9;
+  const out = new Map();
+  for (const [y, o] of g) {
+    if (o.n < minCov * Math.min(dEnd, daysInMonth(y, mo))) continue;
+    out.set(y, agg === "mean" ? o.sum / o.n : agg === "sum" ? o.sum : agg === "max" ? o.max : o.cnt);
+  }
+  return out;
+}
+
+function fmtVal(v, x) {
+  if (v === "racha") return String(Math.round(x));
+  return nf1(x);
+}
+
+// ---------- ficha ----------
+
+function buildDayTiles(S, i, stats, refA, refB) {
+  const tiles = [];
+  const md = S.md[i];
+  const dayTxt = `un ${md % 100} de ${MESES[Math.floor(md / 100)]}`;
+  const mesTxt = MESES_LARGO[Math.floor(md / 100)];
+  for (const st of stats) {
+    const def = DAY_VARS[st.v];
+    const T = { v: st.v, label: def.label, unit: def.unit, color: dayColor(st.v), cls: def.cls, badges: [] };
+    tiles.push(T);
+    if (st.x === null) { T.val = "—"; T.lines = ["Sin dato este día"]; continue; }
+    T.val = fmtVal(st.v, st.x);
+    T.lines = [];
+    const normal = st.pool.length ? mean(st.pool) : null;
+    if (st.v === "prec") {
+      const rainy = st.pool.filter((u) => u >= 0.1);
+      const prob = st.pool.length ? (100 * rainy.length) / st.pool.length : NaN;
+      if (st.x < 0.1) {
+        T.anom = "Día seco";
+        T.anomCls = "";
+        if (Number.isFinite(prob)) T.lines.push(`Llueve ${Math.round(prob)} de cada 100 días en estas fechas`);
+      } else {
+        T.pct = pctRank(rainy, st.x);
+        T.anom = st.x >= 1 ? "Día de lluvia" : "Lluvia débil (menos de 1 mm)";
+        T.anomCls = "up";
+        T.lines.push(`percentil ${pctTxt(T.pct)} de los días de lluvia` +
+          (Number.isFinite(prob) ? ` · llueve el ${Math.round(prob)} %` : ""));
+        const r = rankOf(st.sameDay.map((o) => o.v), st.x);
+        if (r.hi <= Math.max(10, r.n / 4)) T.lines.push(`la ${ord(r.hi, true)} más alta de ${dayTxt} (${r.n} años)`);
+        if (r.hi === 1) T.badges.push(r.ties > 0 ? "Iguala el récord del día" : "Récord del día");
+        const rm = rankOf(st.monthAll, st.x);
+        if (rm.hi === 1) T.badges.push(`Récord de ${mesTxt}`);
+        else if (rm.hi <= 10) T.badges.push(`Top ${rm.hi} de ${mesTxt}`);
+        if (st.x >= st.absHi) T.badges.push("Récord absoluto");
+      }
+      continue;
+    }
+    if (normal !== null) {
+      const an = st.x - normal;
+      T.pct = pctRank(st.pool, st.x);
+      T.anom = `${sgnf(an, st.v === "racha" ? 0 : 1)} ${def.unit} ${an >= 0 ? "sobre" : "bajo"} lo normal`;
+      T.anomCls = an >= 0 ? "up" : "down";
+      const pm = st.monthPool.length ? pctRank(st.monthPool, st.x) : null;
+      T.lines.push(`normal ${fmtVal(st.v, normal)} ${def.unit} · percentil ${pctTxt(T.pct)}` +
+        (pm !== null ? ` (${pctTxt(pm)} en ${mesTxt})` : ""));
+    }
+    const r = rankOf(st.sameDay.map((o) => o.v), st.x);
+    if (r.n >= 5) {
+      const up = r.hi <= r.lo;
+      const k = up ? r.hi : r.lo;
+      T.lines.push(k <= r.n / 3
+        ? `la ${ord(k, def.fem)} ${up ? def.hi : def.lo} de ${dayTxt} (${r.n} años)`
+          .replace(/^la (\d+\.º)/, "el $1")
+        : `${dayTxt.replace(/^un/, "Un")}: puesto ${r.hi} de ${r.n}`);
+      if (r.hi === 1) T.badges.push(r.ties > 0 ? "Iguala el récord del día" : "Récord del día");
+      else if (r.lo === 1 && st.v !== "racha") T.badges.push(r.ties > 0 ? "Iguala el récord del día" : `Récord del día (${def.lo})`);
+    }
+    const rm = rankOf(st.monthAll, st.x);
+    if (rm.hi === 1) T.badges.push(`Récord de ${mesTxt}`);
+    else if (rm.lo === 1 && st.v !== "racha" && st.v !== "sol") T.badges.push(`Récord de ${mesTxt} (${def.lo})`);
+    else if (rm.hi <= 5) T.badges.push(`Top ${rm.hi} de ${mesTxt}`);
+    else if (rm.lo <= 5 && st.v !== "racha" && st.v !== "sol") T.badges.push(`Top ${rm.lo} de ${mesTxt} (${def.lo})`);
+    if (st.x >= st.absHi) T.badges.push("Récord absoluto");
+    else if (st.x <= st.absLo && st.v !== "racha" && st.v !== "sol") T.badges.push("Récord absoluto (mínimo)");
+    if (st.v === "tmin") {
+      if (st.x >= 25) T.badges.push("Noche tórrida");
+      else if (st.x >= 20) T.badges.push("Noche tropical");
+      else if (st.x < 0) T.badges.push("Helada");
+    }
+    if (st.v === "tmax") {
+      if (st.x >= 40) T.badges.push("40 °C o más");
+      else if (st.x < 0) T.badges.push("Día sin deshielo");
+    }
+  }
+  return tiles;
+}
+
+function renderDayTiles(tiles) {
+  const pbar = (T) => {
+    if (!Number.isFinite(T.pct)) return "";
+    return `<div class="pbar ${T.v === "prec" ? "pbar-prec" : ""}" title="percentil ${Math.round(T.pct)}">` +
+      `<span style="left:${Math.max(1.5, Math.min(98.5, T.pct))}%"></span></div>`;
+  };
+  $("dia-tiles").innerHTML = tiles.map((T) =>
+    `<div class="rec-tile day-tile ${T.cls}">` +
+      `<div class="rl">${T.label}</div>` +
+      `<div class="rv">${T.val}<small>${T.val === "—" ? "" : ` ${T.unit}`}</small></div>` +
+      (T.anom ? `<div class="dt-anom ${T.anomCls || ""}">${T.anom}</div>` : "") +
+      pbar(T) +
+      T.lines.map((l) => `<div class="rd">${l}</div>`).join("") +
+      (T.badges.length ? `<div class="badges">${T.badges.map((b) => `<span class="badge">${b}</span>`).join("")}</div>` : "") +
+    `</div>`).join("");
+}
+
+// ---------- tabla del mes ----------
+
+function buildMonthRows(S, Y, mo, dEnd, refA, refB) {
+  const rows = [];
+  const vars = ["tmax", "tmin", "tmed", "prec", "raindays", "racha", "sol"]
+    .filter((v) => (v === "raindays" ? S.json.data.prec : S.json.data[v]));
+  for (const v of vars) {
+    const M = monthAggregate(S, v, mo, dEnd);
+    const x = M.get(Y);
+    const def = v === "raindays"
+      ? { mLabel: "Días de lluvia (≥ 1 mm)", unit: "días", mHi: "con más días de lluvia", mLo: "con menos días de lluvia" }
+      : DAY_VARS[v];
+    const refVals = [...M].filter(([y]) => y >= refA && y <= refB).map(([, u]) => u);
+    const normal = refVals.length >= 5 ? mean(refVals) : null;
+    const row = { v, label: def.mLabel, unit: def.unit, x, normal, n: M.size };
+    if (x !== undefined) {
+      const r = rankOf([...M.values()], x);
+      const up = r.hi <= r.lo;
+      row.rank = up ? r.hi : r.lo;
+      row.rankTxt = `${ord(row.rank, false)} ${up ? def.mHi : def.mLo}`;
+      row.top = row.rank <= 3;
+      if (normal !== null) {
+        if (v === "prec" || v === "sol") {
+          row.anom = normal > 0 ? `${Math.round((100 * x) / normal)} %` : "—";
+          row.anomCls = x >= normal ? (v === "prec" ? "wet" : "up") : (v === "prec" ? "dry" : "down");
+        } else {
+          row.anom = `${sgnf(x - normal, v === "racha" || v === "raindays" ? 0 : 1)}`;
+          row.anomCls = x >= normal ? "up" : "down";
+        }
+      }
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function renderMonthTable(rows, Y, mo, dEnd, full, refA, refB) {
+  const t = $("dia-month");
+  const per = full ? `${cap(MESES_LARGO[mo])} ${Y}` : `1–${dEnd} ${MESES[mo]} ${Y}`;
+  t.querySelector("thead").innerHTML =
+    `<tr><th></th><th>${per}</th><th>Normal ${refA}–${refB}</th><th>Diferencia</th><th>Puesto</th></tr>`;
+  const fv = (r, x) => (r.v === "raindays" ? String(Math.round(x)) : r.v === "racha" ? String(Math.round(x))
+    : r.v === "prec" || r.v === "sol" ? (x >= 100 ? String(Math.round(x)) : nf1(x)) : nf1(x));
+  t.querySelector("tbody").innerHTML = rows.map((r) =>
+    `<tr${r.top ? ' class="hl"' : ""}><td>${r.label}</td>` +
+    `<td><b>${r.x === undefined ? "—" : `${fv(r, r.x)} ${r.unit}`}</b></td>` +
+    `<td>${r.normal === null ? "—" : `${fv(r, r.normal)} ${r.unit}`}</td>` +
+    `<td class="${r.anomCls || ""}">${r.anom || "—"}</td>` +
+    `<td>${r.rankTxt ? `${r.rankTxt} <span class="muted">de ${r.n}</span>` : "—"}</td></tr>`).join("");
+}
+
+// ---------- titular ----------
+
+function dayHeadline(S, i, tiles, mrows, full, dEnd) {
+  const md = S.md[i], d = md % 100, mo = Math.floor(md / 100), Y = S.years[i];
+  const get = (v) => tiles.find((T) => T.v === v && T.val !== "—");
+  const parts = [];
+  const tx = get("tmax"), tn = get("tmin"), pr = get("prec");
+  if (tx) {
+    let s = `máxima de <b>${tx.val} °C</b>`;
+    if (tx.anom) s += ` (${tx.anom})`;
+    parts.push(s);
+  }
+  if (tn) {
+    let s = `mínima de <b>${tn.val} °C</b>`;
+    const tag = tn.badges.find((b) => /Noche|Helada/.test(b));
+    if (tag) s += ` — ${tag.toLowerCase()}`;
+    parts.push(s);
+  }
+  if (pr) parts.push(pr.anom === "Día seco" ? "sin lluvia" : `<b>${pr.val} mm</b> de lluvia`);
+  let txt = `El ${DIAS_SEMANA[new Date(S.startMs + i * MS_DAY).getUTCDay()]} ${d} de ${MESES_LARGO[mo]} de ${Y}` +
+    ` en ${S.json.name}: ${parts.join(", ")}.`;
+  const recs = tiles.flatMap((T) => T.badges.filter((b) => /Récord|Iguala/.test(b)).map((b) => `${b.toLowerCase()} de ${T.label.toLowerCase()}`));
+  if (recs.length) txt += ` 🏆 ${cap(recs.slice(0, 3).join(" · "))}.`;
+  const mt = mrows.find((r) => r.v === "tmed" && r.rank && r.rank <= 10) || mrows.find((r) => r.v === "prec" && r.rank && r.rank <= 5);
+  if (mt) {
+    const pos = mt.rank === 1 ? mt.rankTxt.replace(/^1\.º /, "") : mt.rankTxt;
+    txt += full
+      ? ` ${cap(MESES_LARGO[mo])} de ${Y} fue el ${pos} de ${mt.n} años.`
+      : ` En lo que va de ${MESES_LARGO[mo]} (hasta el día ${dEnd}), ${Y} es el ${pos} de ${mt.n} años.`;
+  }
+  return txt;
+}
+
+// ---------- gráficos ----------
+
+/** «Ese día en la historia»: cada fila, una variable; un punto por año en esa fecha. */
+function plotDaySwarm(S, i, stats, refA, refB, W) {
+  const rows = stats.filter((st) => st.sameDay.length >= 5);
+  const Y = S.years[i];
+  const n = rows.length;
+  const gap = 0.11, h = (1 - gap * (n - 1)) / n;
+  const layout = baseLayout(`${S.json.name} · un ${S.md[i] % 100} de ${MESES_LARGO[Math.floor(S.md[i] / 100)]} en la historia`);
+  layout.margin = { l: 20, r: 20, t: 70, b: 30 };
+  layout.showlegend = false;
+  layout.shapes = []; layout.annotations = [];
+  const traces = [];
+  const y0 = S.yearList[0], y1 = S.yearList[S.yearList.length - 1];
+  const jit = (y) => (((y * 7919) % 101) / 101 - 0.5) * 1.3;
+  rows.forEach((st, k) => {
+    const def = DAY_VARS[st.v], col = dayColor(st.v);
+    const ax = k === 0 ? "" : String(k + 1);
+    const top = 1 - k * (h + gap), bot = top - h;
+    layout[`xaxis${ax}`] = { ...layout.xaxis, domain: [0, 1], anchor: `y${ax}`, ticksuffix: ` ${def.unit}`,
+      zeroline: false, showgrid: true, automargin: true };
+    layout[`yaxis${ax}`] = { ...layout.yaxis, domain: [bot, top], anchor: `x${ax}`, range: [-1, 1],
+      showticklabels: false, showgrid: false, zeroline: false, fixedrange: true };
+    const others = st.sameDay.filter((o) => o.y !== Y);
+    traces.push({ x: others.map((o) => o.v), y: others.map((o) => jit(o.y)), xaxis: `x${ax}`, yaxis: `y${ax}`,
+      mode: "markers", type: "scatter", text: others.map((o) => o.y),
+      marker: { size: 8, color: others.map((o) => o.y), cmin: y0, cmax: y1,
+                colorscale: [[0, hexToRgba(TH.muted, 0.18)], [1, hexToRgba(col, 0.85)]],
+                line: { width: 0 } },
+      hovertemplate: `%{text}: %{x:.1f} ${def.unit}<extra>${def.label}</extra>` });
+    if (st.pool.length >= 10) {
+      const p10 = quantile(st.pool, 0.1), p90 = quantile(st.pool, 0.9), mu = mean(st.pool);
+      layout.shapes.push({ type: "rect", xref: `x${ax}`, yref: `y${ax}`, x0: p10, x1: p90, y0: -0.95, y1: 0.95,
+        fillcolor: TH.band, line: { width: 0 }, layer: "below" });
+      layout.shapes.push({ type: "line", xref: `x${ax}`, yref: `y${ax}`, x0: mu, x1: mu, y0: -0.95, y1: 0.95,
+        line: { color: TH.muted, width: 1.5, dash: "dot" }, layer: "below" });
+    }
+    let lab = `<b>${def.label}</b>`;
+    if (st.x !== null) {
+      traces.push({ x: [st.x], y: [0], xaxis: `x${ax}`, yaxis: `y${ax}`, mode: "markers+text", type: "scatter",
+        text: [`${Y}`], textposition: "top center", textfont: { color: col, family: FONT },
+        marker: { size: 17, color: col, symbol: "diamond", line: { color: TH.card, width: 2 } },
+        hovertemplate: `${Y}: %{x:.1f} ${def.unit}<extra>${def.label}</extra>` });
+      lab += ` · ${fmtVal(st.v, st.x)} ${def.unit}`;
+      if (st.v !== "prec" && st.pool.length) lab += ` · percentil ${pctTxt(pctRank(st.pool, st.x))}`;
+    } else lab += " · sin dato";
+    layout.annotations.push({ xref: "paper", yref: "paper", x: 0, y: top + 0.005, xanchor: "left", yanchor: "bottom",
+      text: lab, showarrow: false, font: { color: TH.fg } });
+  });
+  const hpx = 70 + n * 125;
+  $("plot-dia-swarm").style.height = `${hpx}px`;
+  EXPORT_SIZES["plot-dia-swarm"] = [1600, 160 + n * 250];
+  if (!window.matchMedia("(max-width: 560px)").matches) layout.annotations.push({ xref: "paper", yref: "paper", x: 1, y: 1.0, yanchor: "bottom", xanchor: "right", showarrow: false,
+    text: `banda: rango habitual P10–P90 ${refA}–${refB} (±${W} d) · color: más intenso = más reciente`,
+    font: { size: 11, color: TH.muted } });
+  Plotly.newPlot("plot-dia-swarm", traces, layout, PLOTLY_CFG);
+  $("plot-dia-swarm").on("plotly_click", (ev) => {
+    const p = ev.points && ev.points[0];
+    if (!p || typeof p.text !== "number") return;
+    gotoDayYear(p.text);
+  });
+}
+
+/** El mes del día elegido, día a día, frente a la climatología de cada fecha. */
+function plotDayMonth(S, i, v, W, refA, refB) {
+  const def = DAY_VARS[v], col = dayColor(v);
+  const vals = dayValues(S, v);
+  const Y = S.years[i], mo = Math.floor(S.md[i] / 100), dim = daysInMonth(Y, mo);
+  const iStart = i - (S.md[i] % 100 - 1);
+  const xs = [], ys = [];
+  for (let d = 0; d < dim; d++) {
+    const j = iStart + d;
+    xs.push(`${Y}-${String(mo).padStart(2, "0")}-${String(d + 1).padStart(2, "0")}`);
+    ys.push(j >= 0 && j < vals.length ? vals[j] : null);
+  }
+  const selX = xs[S.md[i] % 100 - 1];
+  const layout = baseLayout(`${S.json.name} · ${def.label} en ${MESES_LARGO[mo]} de ${Y}`);
+  layout.xaxis = { ...layout.xaxis, type: "date", tickformat: "%-d %b",
+    dtick: (window.matchMedia("(max-width: 560px)").matches ? 7 : 2) * MS_DAY,
+    range: [Date.parse(xs[0]) - 0.6 * MS_DAY, Date.parse(xs[dim - 1]) + 0.6 * MS_DAY] };
+  layout.yaxis.ticksuffix = ` ${def.unit}`;
+  layout.legend = { orientation: "h", y: -0.14 };
+  layout.shapes = [{ type: "line", xref: "x", yref: "paper", x0: selX, x1: selX, y0: 0, y1: 1,
+    line: { color: ACCENT, width: 1.5, dash: "dot" } }];
+  let traces;
+  if (v === "prec") {
+    // acumulado del mes frente a los años del período normal
+    const cum = (row) => { let s = 0, n = 0; return row.map((u) => { if (u !== null) { s += u; n++; } return n ? s : null; }); };
+    const refCum = [];
+    for (let y = refA; y <= refB; y++) {
+      const ms = Date.UTC(y, mo - 1, 1), j0 = Math.round((ms - S.startMs) / MS_DAY);
+      const row = [];
+      let nn = 0;
+      for (let d = 0; d < dim; d++) {
+        const j = j0 + d, u = j >= 0 && j < vals.length ? vals[j] : null;
+        if (u !== null) nn++;
+        row.push(u);
+      }
+      if (nn >= 0.9 * dim) refCum.push(cum(row));
+    }
+    const qs = (q) => xs.map((_, d) => {
+      const c = refCum.map((r) => r[d]).filter((u) => u !== null).sort((a, b) => a - b);
+      return c.length ? quantile(c, q) : null;
+    });
+    const p10 = qs(0.1), p50 = qs(0.5), p90 = qs(0.9);
+    const yc = cum(ys);
+    let lastJ = dim - 1;
+    while (lastJ > 0 && ys[lastJ] === null) lastJ--;
+    traces = [
+      { x: xs, y: p90, mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+      { x: xs, y: p10, mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: TH.band,
+        name: `acumulado habitual (P10–P90 ${refA}–${refB})`, hoverinfo: "skip" },
+      { x: xs, y: p50, mode: "lines", line: { color: TH.muted, dash: "dash", width: 1.5 }, name: "acumulado mediano",
+        hovertemplate: "%{x|%-d %b}: %{y:.1f} mm<extra>mediana</extra>" },
+      { x: xs, y: ys, type: "bar", name: "lluvia del día", marker: { color: hexToRgba(col, 0.55) },
+        hovertemplate: "%{x|%-d %b}: %{y:.1f} mm<extra>día</extra>" },
+      { x: xs.slice(0, lastJ + 1), y: yc.slice(0, lastJ + 1), mode: "lines", name: `acumulado ${Y}`,
+        line: { color: col, width: 3 }, hovertemplate: "%{x|%-d %b}: %{y:.1f} mm<extra>acumulado</extra>" },
+    ];
+  } else {
+    const clim = climDaily(vals, refA, refB, W);
+    const recHi = new Map(), recLo = new Map();
+    for (let j = 0; j < vals.length; j++) {
+      const u = vals[j];
+      if (u === null || Math.floor(S.md[j] / 100) !== mo) continue;
+      const m = S.md[j];
+      if (!recHi.has(m) || u > recHi.get(m).v) recHi.set(m, { v: u, y: S.years[j] });
+      if (!recLo.has(m) || u < recLo.get(m).v) recLo.set(m, { v: u, y: S.years[j] });
+    }
+    const mds = xs.map((_, d) => mo * 100 + d + 1);
+    const cq = (q) => mds.map((m) => { const s = clim.sorted.get(m === 229 ? 228 : m); return s ? quantile(s, q) : null; });
+    const rec = (M) => mds.map((m) => (M.has(m) ? M.get(m) : null));
+    const rh = rec(recHi), rl = rec(recLo);
+    traces = [
+      { x: xs, y: cq(0.9), mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
+      { x: xs, y: cq(0.1), mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: TH.band,
+        name: `rango habitual (P10–P90 ${refA}–${refB})`, hoverinfo: "skip" },
+      { x: xs, y: mds.map((m) => clim.mean.get(m === 229 ? 228 : m) ?? null), mode: "lines", name: "normal",
+        line: { color: TH.muted, dash: "dash", width: 1.5 }, hovertemplate: `%{x|%-d %b}: %{y:.1f} ${def.unit}<extra>normal</extra>` },
+      { x: xs, y: rh.map((r) => r && r.v), text: rh.map((r) => r && r.y), mode: "lines", name: "récord del día",
+        line: { color: VAR_COLORS.tmax, dash: "dot", width: 1.3 },
+        hovertemplate: `%{x|%-d %b}: %{y:.1f} ${def.unit} en %{text}<extra>récord alto</extra>` },
+    ];
+    if (v !== "racha" && v !== "sol") {
+      traces.push({ x: xs, y: rl.map((r) => r && r.v), text: rl.map((r) => r && r.y), mode: "lines", name: "récord bajo",
+        line: { color: VAR_COLORS.tmin, dash: "dot", width: 1.3 },
+        hovertemplate: `%{x|%-d %b}: %{y:.1f} ${def.unit} en %{text}<extra>récord bajo</extra>` });
+    }
+    traces.push({ x: xs, y: ys, mode: "lines+markers", name: String(Y), line: { color: col, width: 2.6 },
+      marker: { size: 6, color: col }, connectgaps: false,
+      hovertemplate: `%{x|%-d %b %Y}: %{y:.1f} ${def.unit}<extra></extra>` });
+  }
+  const yi = ys[S.md[i] % 100 - 1];
+  if (yi !== null && v !== "prec") {
+    traces.push({ x: [selX], y: [yi], mode: "markers", showlegend: false, hoverinfo: "skip",
+      marker: { size: 15, color: ACCENT, symbol: "diamond", line: { color: TH.card, width: 2 } } });
+  }
+  Plotly.newPlot("plot-dia-mes", traces, layout, PLOTLY_CFG);
+  $("plot-dia-mes").on("plotly_click", (ev) => {
+    const p = ev.points && ev.points[0];
+    if (!p || !p.x) return;
+    const iso = String(p.x).slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) setDayDate(iso);
+  });
+}
+
+/** Serie anual de un valor (el de la fecha o el del mes) con el año elegido resaltado. */
+function plotYearSeries(div, title, pts, Y, def, v, normal, unitSuffix) {
+  const col = dayColor(v);
+  const isSum = v === "prec";
+  const sel = pts.find((p) => p.y === Y);
+  const layout = baseLayout(title);
+  layout.showlegend = false;
+  layout.yaxis.ticksuffix = ` ${unitSuffix}`;
+  layout.margin = { ...layout.margin, b: 40 };
+  const traces = [];
+  const cols = pts.map((p) => {
+    if (p.y === Y) return ACCENT;
+    if (isSum || normal === null) return hexToRgba(col, 0.55);
+    return p.v >= normal ? hexToRgba(VAR_COLORS.tmax, 0.6) : hexToRgba(VAR_COLORS.tmin, 0.6);
+  });
+  if (isSum) {
+    traces.push({ x: pts.map((p) => p.y), y: pts.map((p) => p.v), type: "bar", marker: { color: cols },
+      hovertemplate: `%{x}: %{y:.1f} ${unitSuffix}<extra></extra>` });
+  } else {
+    traces.push({ x: pts.map((p) => p.y), y: pts.map((p) => p.v), mode: "markers", type: "scatter",
+      marker: { color: cols, size: pts.map((p) => (p.y === Y ? 14 : 7)), line: { color: TH.card, width: 1 } },
+      hovertemplate: `%{x}: %{y:.1f} ${unitSuffix}<extra></extra>` });
+    // tendencia lineal
+    if (pts.length >= 20) {
+      const f = ols(pts.map((p) => p.y), pts.map((p) => p.v));
+      if (f) {
+        const xa = pts[0].y, xb = pts[pts.length - 1].y;
+        traces.push({ x: [xa, xb], y: [f.a + f.b * xa, f.a + f.b * xb], mode: "lines",
+          line: { color: TH.fg, width: 1.5, dash: "dash" }, hoverinfo: "skip" });
+        layout.annotations = [{ xref: "paper", yref: "paper", x: 0, y: 1.02, xanchor: "left", yanchor: "bottom",
+          showarrow: false, font: { size: 12, color: TH.muted },
+          text: `tendencia ${sgnf(f.b * 10, v === "racha" ? 1 : 2)} ${unitSuffix}/década` }];
+      }
+    }
+  }
+  if (normal !== null) {
+    layout.shapes = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: normal, y1: normal,
+      line: { color: TH.muted, width: 1.2, dash: "dot" } }];
+  }
+  if (sel) {
+    layout.annotations = [...(layout.annotations || []), { x: sel.y, y: sel.v, text: `<b>${Y}</b>`, showarrow: true,
+      arrowhead: 0, ax: 0, ay: -26, font: { color: ACCENT, size: 13 }, bgcolor: TH.card }];
+  }
+  Plotly.newPlot(div, traces, layout, PLOTLY_CFG);
+  $(div).on("plotly_click", (ev) => {
+    const p = ev.points && ev.points[0];
+    if (p && Number.isFinite(+p.x)) gotoDayYear(+p.x);
+  });
+}
+
+// ---------- navegación por fechas ----------
+
+function setDayDate(iso) {
+  const S = state.station;
+  if (!S || dayIndex(S, iso) < 0) return;
+  state.diaDate = iso;
+  $("dia-date").value = iso;
+  if (currentTab() === "dia") { updateHash(); runPanel("dia"); } else activateTab("dia");
+}
+
+/** Mismo día y mes, otro año (29-feb → 28-feb si no es bisiesto). */
+function gotoDayYear(y) {
+  const cur = state.diaDate;
+  if (!cur) return;
+  let md = cur.slice(5);
+  if (md === "02-29" && daysInMonth(y, 2) === 28) md = "02-28";
+  setDayDate(`${y}-${md}`);
+}
+
+/** Abre «Un día» con una fecha (desde el calendario, el año en curso, el último dato…). */
+function openDay(iso) {
+  state.diaDate = iso;
+  activateTab("dia");
+}
+
+function shiftDay(k) {
+  const S = state.station;
+  const i = dayIndex(S, $("dia-date").value);
+  if (i < 0) return;
+  const j = Math.max(0, Math.min(S.md.length - 1, i + k));
+  setDayDate(fmtDate(S.startMs, j));
+}
+
+// ---------- principal ----------
+
+function runDia() {
+  const S = state.station;
+  const [refA, refB] = getRef();
+  const W = +$("dia-win").value;
+  const minIso = fmtDate(S.startMs, 0), maxIso = fmtDate(S.startMs, lastDataIndex(S));
+  const inp = $("dia-date");
+  inp.min = minIso; inp.max = maxIso;
+  let iso = state.diaDate || inp.value;
+  if (!iso || dayIndex(S, iso) < 0 || iso > maxIso) iso = maxIso;
+  state.diaDate = iso;
+  inp.value = iso;
+  updateHash();
+  const i = dayIndex(S, iso);
+  const Y = S.years[i], md = S.md[i], mo = Math.floor(md / 100);
+
+  const vars = Object.keys(DAY_VARS).filter((v) => S.json.data[v]);
+  const stats = vars.map((v) => dayStats(S, v, i, W, refA, refB)).filter((st) => st && st.sameDay.length);
+  const tiles = buildDayTiles(S, i, stats, refA, refB);
+  renderDayTiles(tiles);
+
+  // mes: completo, o hasta el último dato si está en curso
+  const lastI = lastDataIndex(S);
+  const monthEndI = i + (daysInMonth(Y, mo) - md % 100);
+  const full = monthEndI <= lastI;
+  const dEnd = full ? daysInMonth(Y, mo) : S.md[lastI] % 100;
+  const mrows = buildMonthRows(S, Y, mo, dEnd, refA, refB);
+  renderMonthTable(mrows, Y, mo, dEnd, full, refA, refB);
+  $("dia-month-title").textContent = full
+    ? `${cap(MESES_LARGO[mo])} de ${Y} frente a otros ${MESES_LARGO[mo]}`
+    : `Del 1 al ${dEnd} de ${MESES_LARGO[mo]} de ${Y} frente a las mismas fechas de otros años`;
+
+  const head = dayHeadline(S, i, tiles, mrows, full, dEnd);
+  $("dia-headline").innerHTML = head;
+  const dow = DIAS_SEMANA[new Date(S.startMs + i * MS_DAY).getUTCDay()];
+  $("dia-card-date").textContent = `${cap(dow)}, ${md % 100} de ${MESES_LARGO[mo]} de ${Y}`;
+  $("dia-card-sub").textContent = `${S.json.name} (${S.json.province}) · normal ${refA}–${refB}, ±${W} días`;
+  state.diaCard = { title: S.json.name, date: $("dia-card-date").textContent,
+    sub: `${S.json.province}${S.json.altitude !== null ? ` · ${S.json.altitude} m` : ""} · normal ${refA}–${refB}`,
+    tiles, headline: head.replace(/<[^>]+>/g, "").replace(/🏆/g, "★") };
+
+  plotDaySwarm(S, i, stats, refA, refB, W);
+
+  // variable de los gráficos de detalle
+  const sel = $("dia-var");
+  const prev = sel.value || "tmax";
+  sel.innerHTML = vars.map((v) => `<option value="${v}">${DAY_VARS[v].label}</option>`).join("");
+  sel.value = vars.includes(prev) ? prev : vars[0];
+  const v = sel.value, def = DAY_VARS[v];
+  plotDayMonth(S, i, v, W, refA, refB);
+
+  const st = stats.find((s) => s.v === v);
+  if (st) {
+    const pts = st.sameDay.map((o) => ({ y: o.y, v: o.v }));
+    const normal = st.pool.length ? mean(st.pool) : null;
+    plotYearSeries("plot-dia-anios", `${def.label} de un ${md % 100} de ${MESES[mo]}, año a año`, pts, Y, def, v,
+      normal, def.unit);
+  }
+  const M = monthAggregate(S, v, mo, dEnd);
+  const mpts = [...M].sort((a, b) => a[0] - b[0]).map(([y, u]) => ({ y, v: u }));
+  const refV = mpts.filter((p) => p.y >= refA && p.y <= refB).map((p) => p.v);
+  plotYearSeries("plot-dia-mesanios",
+    `${def.mLabel} de ${full ? MESES_LARGO[mo] : `1–${dEnd} ${MESES[mo]}`}, año a año`, mpts, Y, def, v,
+    refV.length >= 5 ? mean(refV) : null, def.unit);
+
+  $("dia-note").textContent =
+    `Climatología del día: valores de ${refA}–${refB} entre ${W} días antes y ${W} después de la fecha; ` +
+    "la del mes, todos los días de ese mes en el mismo período. Puestos y récords usan toda la serie, " +
+    "incluido el propio día. El percentil de la lluvia se calcula solo sobre los días que llovió. " +
+    "La racha está en km/h. Pulsa cualquier punto de los gráficos para saltar a ese día.";
+}
+
+// ---------- ficha para compartir (canvas) ----------
+
+function wrapLines(ctx, text, maxW) {
+  const words = text.split(/\s+/), lines = [];
+  let cur = "";
+  for (const w of words) {
+    const t = cur ? `${cur} ${w}` : w;
+    if (ctx.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+/** Dibuja la ficha del día en un canvas de 1600 px de ancho lógico. */
+function dayCardCanvas(SCALE) {
+  const C = state.diaCard;
+  const W = 1600, PAD = 56, COLS = 3, GAP = 22;
+  const tw = (W - 2 * PAD - GAP * (COLS - 1)) / COLS, th = 300;
+  const F = (w, s) => `${w} ${s * SCALE}px "Plus Jakarta Sans", system-ui, sans-serif`;
+  const probe = document.createElement("canvas").getContext("2d");
+  probe.font = F(500, 26);
+  const headLines = wrapLines(probe, C.headline, (W - 2 * PAD) * SCALE);
+  const rows = Math.ceil(C.tiles.length / COLS);
+  const H = 190 + rows * (th + GAP) + headLines.length * 40 + 50;
+  const cv = document.createElement("canvas");
+  cv.width = W * SCALE; cv.height = H * SCALE;
+  const ctx = cv.getContext("2d");
+  ctx.scale(SCALE, SCALE);
+  const font = (w, s) => `${w} ${s}px "Plus Jakarta Sans", system-ui, sans-serif`;
+  ctx.fillStyle = TH.card; ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
+  ctx.fillStyle = ACCENT; ctx.font = font(700, 24);
+  ctx.fillText(C.date.toUpperCase(), PAD, 72);
+  ctx.fillStyle = TH.fg; ctx.font = font(800, 50);
+  ctx.fillText(C.title, PAD, 128);
+  ctx.fillStyle = TH.muted; ctx.font = font(500, 22);
+  ctx.fillText(C.sub, PAD, 164);
+
+  const rr = (x, y, w, h, r) => {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  };
+  C.tiles.forEach((T, k) => {
+    const x = PAD + (k % COLS) * (tw + GAP), y = 196 + Math.floor(k / COLS) * (th + GAP);
+    rr(x, y, tw, th, 18); ctx.fillStyle = TH.card2; ctx.fill();
+    ctx.fillStyle = T.color; rr(x, y + 24, 6, th - 48, 3); ctx.fill();
+    ctx.fillStyle = TH.muted; ctx.font = font(700, 22);
+    ctx.fillText(T.label.toUpperCase(), x + 30, y + 46);
+    ctx.fillStyle = T.color; ctx.font = font(800, 64);
+    ctx.fillText(T.val, x + 30, y + 118);
+    const vw = ctx.measureText(T.val).width;
+    if (T.val !== "—") { ctx.font = font(700, 28); ctx.fillText(` ${T.unit}`, x + 30 + vw, y + 118); }
+    let yy = y + 158;
+    if (T.anom) {
+      ctx.fillStyle = T.anomCls === "up" ? VAR_COLORS.tmax : T.anomCls === "down" ? VAR_COLORS.tmin : TH.fg;
+      if (T.v === "prec" && T.anomCls === "up") ctx.fillStyle = VAR_COLORS.prec;
+      ctx.font = font(700, 23); ctx.fillText(T.anom, x + 30, yy); yy += 22;
+    }
+    if (Number.isFinite(T.pct)) {
+      const bx = x + 30, bw = tw - 60, by = yy;
+      const g = ctx.createLinearGradient(bx, 0, bx + bw, 0);
+      if (T.v === "prec") { g.addColorStop(0, hexToRgba(VAR_COLORS.prec, 0.15)); g.addColorStop(1, VAR_COLORS.prec); } else {
+        g.addColorStop(0, VAR_COLORS.tmin); g.addColorStop(0.5, TH.border); g.addColorStop(1, VAR_COLORS.tmax);
+      }
+      rr(bx, by, bw, 10, 5); ctx.fillStyle = g; ctx.fill();
+      const px = bx + (bw * Math.max(1.5, Math.min(98.5, T.pct))) / 100;
+      ctx.beginPath(); ctx.arc(px, by + 5, 11, 0, 2 * Math.PI); ctx.fillStyle = TH.fg; ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = TH.card2; ctx.stroke();
+      ctx.fillStyle = TH.muted; ctx.font = font(600, 18);
+      ctx.fillText(`percentil ${pctTxt(T.pct)}`, bx, by + 38);
+      yy = by + 66;
+    }
+    ctx.fillStyle = T.badges.length ? ACCENT : TH.muted;
+    ctx.font = font(700, 19);
+    const btxt = T.badges.length ? `★ ${T.badges.slice(0, 2).join(" · ")}` : (T.lines[T.lines.length - 1] || "");
+    const bl = wrapLines(ctx, btxt, tw - 60).slice(0, 2);
+    bl.forEach((l, q) => ctx.fillText(l, x + 30, Math.min(yy + q * 26, y + th - 18 - (bl.length - 1 - q) * 26)));
+  });
+  let y = 196 + rows * (th + GAP) + 30;
+  ctx.fillStyle = TH.fg; ctx.font = font(500, 26);
+  for (const l of headLines) { ctx.fillText(l, PAD, y); y += 40; }
+  return cv;
+}
+
+// ==========================================================
 // PRODUCTO: Dos estaciones
 // ==========================================================
 
@@ -2823,6 +3563,10 @@ const EXPORT_SIZES = {
   "plot-nacional-regtr": [1600, 800],
   "plot-spi-cal": [1400, 1600],
   "plot-retorno": [1500, 1100],
+  "plot-dia-swarm": [1600, 1600],
+  "plot-dia-mes": [1600, 900],
+  "plot-dia-anios": [1600, 800],
+  "plot-dia-mesanios": [1600, 800],
 };
 
 function loadImage(src) {
@@ -2835,21 +3579,24 @@ function loadImage(src) {
 }
 
 /** Exporta todos los gráficos visibles del análisis en UNA imagen PNG, con firma y fuente al pie. */
-async function exportActivePanel() {
+async function exportActivePanel(opts = {}) {
   const panel = document.querySelector(".panel:not([hidden])");
   if (!panel) return;
   const plots = [...panel.querySelectorAll(".plot")]
-    .filter((d) => d.offsetParent !== null && d.data && d.data.length && d.layout);
-  const btn = $("export-png");
-  if (!plots.length) {
+    .filter((d) => d.offsetParent !== null && d.data && d.data.length && d.layout)
+    .filter((d) => !opts.only || opts.only.includes(d.id));
+  const withCard = panel.id === "panel-dia" && state.diaCard;
+  const btn = opts.button || $("export-png");
+  const btnTxt = btn.textContent;
+  if (!plots.length && !withCard) {
     alert("No hay ningún gráfico que exportar en esta sección.");
     return;
   }
   btn.disabled = true; btn.textContent = "Generando…";
   const SCALE = 2;
   try {
-    const single = plots.length === 1;
-    const imgs = [];
+    const single = plots.length === 1 && !withCard;
+    const imgs = withCard ? [dayCardCanvas(SCALE)] : [];
     for (const div of plots) {
       let [w, hgt] = EXPORT_SIZES[div.id] || [1600, 1000];
       if (!single) { hgt = Math.round((hgt * 1600) / w); w = 1600; }
@@ -2891,7 +3638,9 @@ async function exportActivePanel() {
     const blob = await new Promise((res) => cv.toBlob(res, "image/png"));
     if (!blob) throw new Error("el navegador no pudo crear el PNG");
     const name = panel.id.replace("panel-", "") +
-      (panel.id === "panel-nacional" ? `-${state.natView || "evol"}` : "");
+      (panel.id === "panel-nacional" ? `-${state.natView || "evol"}` : "") +
+      (panel.id === "panel-dia" && state.diaDate ? `-${state.diaDate}` : "") +
+      (opts.suffix ? `-${opts.suffix}` : "");
     const prefix = state.station && panel.id !== "panel-nacional" ? state.station.json.id : "espana";
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -2904,7 +3653,7 @@ async function exportActivePanel() {
     console.error(e);
     alert(`No se pudo exportar la imagen: ${e.message || e}`);
   } finally {
-    btn.disabled = false; btn.textContent = "⤓ PNG";
+    btn.disabled = false; btn.textContent = btnTxt;
   }
 }
 
@@ -2917,7 +3666,7 @@ Object.assign(TAB_RUNNERS, {
   indices: runIndices, rachas: runStreaks, comparador: runComparator,
   olas: runWaves, records: runRecords, periodos: runPeriodos, nacional: runNacional,
   distribucion: runDistribution, calendario: runCalendar, duelo: runDuel,
-  retorno: runRetorno, spi: runSPI,
+  retorno: runRetorno, spi: runSPI, dia: runDia,
 });
 
 const QUICK_PICKS = [
@@ -2953,7 +3702,7 @@ function bindControls() {
   }
   for (const name of Object.keys(TAB_RUNNERS)) {
     $(`panel-${name}`).querySelectorAll(".controls select, .controls input").forEach((el) => {
-      if (el.id === "du-search") return;
+      if (el.id === "du-search" || el.id === "dia-date") return;
       el.addEventListener("change", () => {
         if (state.station || name === "nacional") runPanel(name);
       });
@@ -2996,6 +3745,16 @@ function bindControls() {
   });
   for (const id of ["rt-a1", "rt-a2", "rt-b1", "rt-b2"]) $(id).addEventListener("change", () => { state.rtTouched = true; });
   $("rt-var").addEventListener("change", () => { $("rt-val").value = ""; });
+  $("dia-date").addEventListener("change", () => setDayDate($("dia-date").value));
+  $("dia-prev").addEventListener("click", () => shiftDay(-1));
+  $("dia-next").addEventListener("click", () => shiftDay(1));
+  $("dia-prev-y").addEventListener("click", () => gotoDayYear(+state.diaDate.slice(0, 4) - 1));
+  $("dia-next-y").addEventListener("click", () => gotoDayYear(+state.diaDate.slice(0, 4) + 1));
+  $("dia-last").addEventListener("click", () => setDayDate(fmtDate(state.station.startMs, lastDataIndex(state.station))));
+  $("last-obs").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-day]");
+    if (b) openDay(b.dataset.day);
+  });
   $("rec-scope").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
@@ -3035,7 +3794,9 @@ function bindKeys() {
 }
 
 function bindExport() {
-  $("export-png").addEventListener("click", exportActivePanel);
+  $("export-png").addEventListener("click", () => exportActivePanel());
+  $("dia-share").addEventListener("click", () =>
+    exportActivePanel({ only: ["plot-dia-swarm"], suffix: "ficha", button: $("dia-share") }));
 }
 
 async function init() {

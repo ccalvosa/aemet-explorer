@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=42">
+<link rel="stylesheet" href="css/style.css?v=43">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -68,7 +68,7 @@
   <div class="quick-picks" id="quick-picks"></div>
 
   <div class="feature-grid">
-    <div class="feature"><div class="feature-ico">📅</div><h3>Este año</h3><p>Cada día frente a la normal y los récords. Calendario de anomalías.</p></div>
+    <div class="feature"><div class="feature-ico">🔎</div><h3>Un día cualquiera</h3><p>Cualquier día de la historia frente a lo normal: anomalías, puestos y récords. Y el año en curso, día a día.</p></div>
     <div class="feature"><div class="feature-ico">📈</div><h3>Tendencias</h3><p>Evolución anual, warming stripes, noches tropicales, heladas…</p></div>
     <div class="feature"><div class="feature-ico">🔥</div><h3>Extremos</h3><p>Rachas, olas de calor y de frío, períodos de retorno y sequías.</p></div>
     <div class="feature"><div class="feature-ico">🗺️</div><h3>Toda España</h3><p>Mapa de anomalías, regiones, años más cálidos y récords de toda la red.</p></div>
@@ -113,7 +113,8 @@
 
   <div class="workspace">
     <nav class="tabs" id="tabs" aria-label="Análisis">
-      <div class="nav-group">Este año</div>
+      <div class="nav-group">Día y año</div>
+      <button class="tab" data-tab="dia"><span class="ico">🔎</span>Un día cualquiera</button>
       <button class="tab active" data-tab="anio"><span class="ico">📅</span>Año en curso</button>
       <button class="tab" data-tab="calendario"><span class="ico">🗓️</span>Calendario</button>
 
@@ -140,6 +141,68 @@
 
     <main class="main">
       <button id="export-png" class="btn-export" title="Descargar los gráficos de esta sección como PNG, listos para redes">⤓ PNG</button>
+
+    <!-- ---- TAB: UN DÍA ---- -->
+    <section id="panel-dia" class="panel card" hidden>
+      <header class="panel-head"><h2>Un día cualquiera</h2><p>Elige un día de la historia de la estación y compáralo con lo normal para esa fecha y para ese mes: anomalías, percentiles, puestos y récords de todas las variables.</p></header>
+      <div class="controls">
+        <div class="control">
+          <label class="field-label" for="dia-date">Día</label>
+          <div class="inline day-nav">
+            <button class="icon-btn sm" id="dia-prev-y" title="Mismo día, año anterior">«</button>
+            <button class="icon-btn sm" id="dia-prev" title="Día anterior">‹</button>
+            <input type="date" id="dia-date" class="mono">
+            <button class="icon-btn sm" id="dia-next" title="Día siguiente">›</button>
+            <button class="icon-btn sm" id="dia-next-y" title="Mismo día, año siguiente">»</button>
+          </div>
+        </div>
+        <div class="control">
+          <label class="field-label" for="dia-win">Climatología del día</label>
+          <select id="dia-win">
+            <option value="0">solo esa fecha</option>
+            <option value="3">±3 días</option>
+            <option value="7" selected>±7 días</option>
+            <option value="15">±15 días</option>
+          </select>
+        </div>
+        <div class="control">
+          <span class="field-label">&nbsp;</span>
+          <button class="link-btn" id="dia-last">Ir al último dato</button>
+        </div>
+      </div>
+
+      <div class="day-card">
+        <div class="day-card-head">
+          <div>
+            <p class="eyebrow" id="dia-card-date"></p>
+            <p class="day-card-sub" id="dia-card-sub"></p>
+          </div>
+          <button class="btn-share" id="dia-share" title="Descarga la ficha del día y su gráfico en una imagen, lista para compartir">⤓ Compartir ficha</button>
+        </div>
+        <div id="dia-tiles" class="rec-grid day-grid"></div>
+        <p id="dia-headline" class="answer"></p>
+      </div>
+
+      <h3 class="block-title">Ese día en la historia</h3>
+      <div id="plot-dia-swarm" class="plot"></div>
+
+      <h3 class="block-title" id="dia-month-title">El mes</h3>
+      <div class="table-wrap table-full"><table id="dia-month" class="data-table day-month"><thead></thead><tbody></tbody></table></div>
+
+      <div class="controls controls-inline">
+        <div class="control">
+          <label class="field-label" for="dia-var">Variable de los gráficos de detalle</label>
+          <select id="dia-var"></select>
+        </div>
+      </div>
+      <h3 class="block-title">El mes, día a día</h3>
+      <div id="plot-dia-mes" class="plot plot-half"></div>
+      <div class="split split-even">
+        <div id="plot-dia-anios" class="plot plot-half"></div>
+        <div id="plot-dia-mesanios" class="plot plot-half"></div>
+      </div>
+      <p id="dia-note" class="note"></p>
+    </section>
 
     <!-- ---- TAB: AÑO EN CURSO ---- -->
     <section id="panel-anio" class="panel card" hidden>
@@ -796,6 +859,6 @@
   <span>Hecho por <a href="https://x.com/MeteoZGZ" target="_blank" rel="noopener">@MeteoZGZ</a></span>
 </footer>
 
-<script src="js/app.js?v=42"></script>
+<script src="js/app.js?v=43"></script>
 </body>
 </html>

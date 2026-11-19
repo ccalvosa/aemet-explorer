@@ -21,6 +21,7 @@
   --tmin: #1c7ed6;
   --prec: #2b8a3e;
   --dtr: #9c36b5;
+  --sol: #f08c00;
   --shadow: 0 1px 2px rgba(31, 36, 48, 0.04), 0 4px 16px rgba(31, 36, 48, 0.06);
   --shadow-lg: 0 12px 40px rgba(31, 36, 48, 0.14);
   --radius: 14px;
@@ -48,6 +49,7 @@
     --tmin: #4dabf7;
     --prec: #69db7c;
     --dtr: #cc8de0;
+  --sol: #ffa94d;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
     --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
@@ -70,6 +72,7 @@
   --tmin: #4dabf7;
   --prec: #69db7c;
   --dtr: #cc8de0;
+  --sol: #ffa94d;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
   --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
@@ -669,6 +672,109 @@ input[type="range"] { width: 150px; accent-color: var(--accent); }
 .answer b { color: var(--accent); }
 
 #na-play { width: 2.2rem; height: 2.2rem; padding: 0; flex: none; }
+
+/* ---------- v3.2: Un día cualquiera ---------- */
+input[type="date"] {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--fg);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.42rem 0.6rem;
+  min-width: 9.5rem;
+}
+input[type="date"]:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.day-nav { gap: 0.35rem; }
+.icon-btn.sm { width: 32px; height: 32px; font-size: 0.95rem; font-weight: 700; flex: none; }
+.icon-btn.sm:hover { transform: none; color: var(--accent); }
+.controls-inline { margin: 1.2rem 0 0.4rem; }
+
+.day-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem 0.4rem;
+  margin-bottom: 1.2rem;
+  background: linear-gradient(180deg, var(--accent-soft), transparent 140px), var(--card);
+}
+.day-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+.day-card-head .eyebrow { color: var(--accent); font-size: 0.9rem; font-weight: 800; letter-spacing: 0.04em; }
+.day-card-sub { color: var(--muted); font-size: 0.84rem; margin-top: 0.15rem; }
+.btn-share {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 99px;
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  color: var(--accent-fg);
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+}
+.btn-share:hover { filter: brightness(1.08); }
+.btn-share:disabled { opacity: 0.6; cursor: progress; }
+
+.day-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.75rem; }
+.day-tile { padding: 0.8rem 0.9rem 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.day-tile .rv { font-size: 2rem; }
+.rec-tile.t-tmed { --c: var(--tmed); }
+.rec-tile.t-sol { --c: var(--sol); }
+.dt-anom { font-size: 0.84rem; font-weight: 700; }
+.dt-anom.up { color: var(--tmax); }
+.dt-anom.down { color: var(--tmin); }
+.t-prec .dt-anom.up { color: var(--prec); }
+.pbar {
+  position: relative;
+  height: 7px;
+  border-radius: 99px;
+  margin: 0.45rem 0 0.35rem;
+  background: linear-gradient(90deg, var(--tmin), var(--border) 50%, var(--tmax));
+}
+.pbar.pbar-prec { background: linear-gradient(90deg, var(--card-2), var(--prec)); }
+.pbar span {
+  position: absolute;
+  top: 50%;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--fg);
+  border: 2px solid var(--card);
+  transform: translate(-50%, -50%);
+}
+.badges { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; }
+.badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.day-month td.up { color: var(--tmax); font-weight: 700; }
+.day-month td.down { color: var(--tmin); font-weight: 700; }
+.day-month td.wet { color: var(--prec); font-weight: 700; }
+.day-month td.dry { color: var(--accent); font-weight: 700; }
+.day-month .muted { color: var(--muted); font-weight: 500; }
+.data-table.day-month tbody tr:first-child td { color: inherit; font-weight: inherit; }
+.data-table.day-month tbody tr.hl td:first-child { color: var(--accent); font-weight: 700; }
+.data-table.day-month tbody tr.hl td { background: none; }
+.data-table.day-month tbody tr.hl td:first-child::after { content: " ★"; }
+.last-obs .link-btn { font-size: inherit; }
+.table-full { max-height: none; overflow-x: auto; }
+
+@media (max-width: 560px) {
+  .day-card-head { flex-direction: column; }
+  .day-grid { grid-template-columns: 1fr 1fr; }
+  .day-tile .rv { font-size: 1.6rem; }
+  input[type="date"] { min-width: 0; flex: 1; }
+}
 
 /* ---------- carga ---------- */
 .loader {
