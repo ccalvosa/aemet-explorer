@@ -54,7 +54,7 @@ Los análisis se agrupan en cinco bloques:
   diarias **provisionales** de los últimos 20 días → `daily.json`, más la comparación de hoy y
   ayer con la normal 1991–2020 y los récords de cada estación. La web rellena con ellas los días
   sin dato consolidado (marcados como provisionales) y muestra anomalías y récords en «Última hora».
-- `.github/workflows/obs.yml` — lanza `update_obs.py` y `update_daily.py` cada 20 minutos y publica `obs.json` y `daily.json` en la
+- `.github/workflows/obs.yml` — lanza `update_obs.py` y `update_daily.py` cada 10 minutos (en un bucle de ~5,5 h que se relanza solo, porque el cron de GitHub llega con horas de retraso) y publica `obs.json` y `daily.json` en la
   rama `obs` (un único commit reescrito, para no engordar el historial). La web lo lee de
   `raw.githubusercontent.com/ccalvosa/aemet-explorer/obs/obs.json`; en local, de `data/obs.json`.
 - `.github/workflows/update.yml` — ejecuta `update_recent.py` cada día a las

@@ -8,7 +8,7 @@ Usa dos endpoints de AEMET OpenData en cada ejecución:
   observacion/convencional/todas              datos horarios (últimas ~12 h), con
                                               máxima/mínima y lluvia de cada hora
 
-Como el diezminutal solo cubre una hora, el script se lanza cada 20 minutos y
+Como el diezminutal solo cubre una hora, el script se lanza cada 10 minutos y
 fusiona lo nuevo con el obs.json anterior. Los datos horarios rellenan las
 horas en punto que falten (si el cron se retrasa) y dan los extremos reales de
 cada hora. Se descartan los valores con bandera de calidad >= 3 (erróneos).

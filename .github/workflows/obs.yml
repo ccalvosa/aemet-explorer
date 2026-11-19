@@ -1,18 +1,24 @@
 name: update-obs
 
 # Observaciones cada 10 minutos de las últimas 24 h (pestaña «Última hora»).
-# El endpoint diezminutal de AEMET solo da la última hora: hay que lanzarlo a menudo.
-# Se guardan en la rama «obs», que siempre tiene un único commit (se reescribe
-# con push forzado) para no llenar el historial de main con decenas de commits al día.
-# La web lee https://raw.githubusercontent.com/<repo>/obs/obs.json
+# El endpoint diezminutal de AEMET solo da la última hora, así que hay que leerlo
+# a menudo. El cron de GitHub no sirve para eso: en repos gratuitos llega con horas
+# de retraso o no llega. Por eso cada ejecución trabaja en bucle unas 5,5 h (una
+# descarga cada 10 min) y al terminar se relanza a sí misma con workflow_dispatch.
+# El cron queda solo como red de seguridad por si la cadena se corta; el grupo de
+# concurrencia evita que haya dos bucles a la vez.
+# Se guarda en la rama «obs», que siempre tiene un único commit (push forzado) para
+# no llenar el historial de main. La web lee
+# https://raw.githubusercontent.com/<repo>/obs/{obs,daily}.json
 
 on:
   schedule:
-    - cron: "7,27,47 * * * *"   # cada 20 min; los datos horarios rellenan huecos si GitHub se retrasa
+    - cron: "17 */2 * * *"   # red de seguridad: reinicia la cadena si se ha cortado
   workflow_dispatch: {}
 
 permissions:
   contents: write
+  actions: write            # para relanzarse al final
 
 concurrency:
   group: update-obs
@@ -21,7 +27,10 @@ concurrency:
 jobs:
   obs:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 350
+    env:
+      LOOP_MINUTES: 330      # duración del bucle (el límite de un job es 6 h)
+      EVERY: 600             # segundos entre descargas
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,40 +46,51 @@ jobs:
         run: |
           mkdir -p out
           if git fetch --depth=1 origin obs 2>/dev/null; then
-            git show FETCH_HEAD:obs.json > prev.json || rm -f prev.json
-            git show FETCH_HEAD:daily.json > daily_prev.json || rm -f daily_prev.json
+            git show FETCH_HEAD:obs.json > out/obs.json || rm -f out/obs.json
+            git show FETCH_HEAD:daily.json > out/daily.json || rm -f out/daily.json
           fi
 
-      - name: Descargar la última observación de AEMET
+      - name: Bucle de descarga y publicación cada 10 minutos
         env:
           AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
-        run: |
-          if [ -f prev.json ]; then
-            python scripts/update_obs.py --previous prev.json --output out/obs.json
-          else
-            python scripts/update_obs.py --output out/obs.json
-          fi
-
-      - name: Valores diarios provisionales y comparación con la climatología
-        run: |
-          [ -f out/obs.json ] || exit 0
-          if [ -f daily_prev.json ]; then
-            python scripts/update_daily.py --obs out/obs.json --previous daily_prev.json --data-dir data --output out/daily.json \
-              || cp daily_prev.json out/daily.json
-          else
-            python scripts/update_daily.py --obs out/obs.json --data-dir data --output out/daily.json || true
-          fi
-
-      - name: Publicar en la rama obs (un solo commit)
-        env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          [ -f out/obs.json ] || { echo "Sin datos que publicar."; exit 0; }
-          cd out
-          git init -q
-          git config user.name "aemet-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git checkout -q -b obs
-          git add obs.json $( [ -f daily.json ] && echo daily.json )
-          git commit -q -m "obs: últimas 24 h y diarios provisionales [bot]"
-          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" obs
+          publish() {
+            rm -rf pub && mkdir pub
+            cp out/obs.json pub/
+            [ -f out/daily.json ] && cp out/daily.json pub/
+            (
+              cd pub
+              git init -q
+              git config user.name "aemet-bot"
+              git config user.email "actions@users.noreply.github.com"
+              git checkout -q -b obs
+              git add .
+              git commit -q -m "obs: últimas 24 h y diarios provisionales [bot]"
+              git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" obs
+            )
+          }
+          end=$(( $(date +%s) + LOOP_MINUTES * 60 ))
+          while :; do
+            start=$(date +%s)
+            echo "::group::$(date -u +%FT%TZ)"
+            if [ -f out/obs.json ]; then prev="--previous out/obs.json"; else prev=""; fi
+            python scripts/update_obs.py $prev --output out/obs.new.json \
+              && mv out/obs.new.json out/obs.json || echo "::warning::update_obs falló"
+            if [ -f out/obs.json ]; then
+              if [ -f out/daily.json ]; then dprev="--previous out/daily.json"; else dprev=""; fi
+              python scripts/update_daily.py --obs out/obs.json $dprev --data-dir data --output out/daily.new.json \
+                && mv out/daily.new.json out/daily.json || echo "::warning::update_daily falló"
+              publish || echo "::warning::no se pudo publicar"
+            fi
+            echo "::endgroup::"
+            now=$(date +%s)
+            [ $(( now + EVERY )) -lt $end ] || break
+            sleep $(( EVERY - (now - start) > 0 ? EVERY - (now - start) : 1 ))
+          done
+
+      - name: Relanzar la cadena
+        if: success()   # no se relanza si se cancela a mano o falla
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run obs.yml --ref "${GITHUB_REF_NAME}" -R "${GITHUB_REPOSITORY}"
