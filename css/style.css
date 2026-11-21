@@ -605,6 +605,7 @@ select {
 .chk-tmax input { accent-color: var(--tmax); }
 .chk-tmed input { accent-color: var(--tmed); }
 .chk-tmin input { accent-color: var(--tmin); }
+.chk-prec input { accent-color: var(--prec); }
 
 input[type="range"] { width: 150px; accent-color: var(--accent); }
 

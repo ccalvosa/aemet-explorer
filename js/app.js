@@ -864,7 +864,12 @@ function runEvolution() {
   }
   const minCov = +$("ev-cov").value / 100;
   const vars = ["tmax", "tmed", "tmin", "dtr"].filter((v) => $(`ev-${v}`).checked);
-  if (!vars.length) { $("ev-note").textContent = "Selecciona al menos una variable."; return; }
+  const withPrec = $("ev-prec").checked && !!S.json.data.prec;
+  $("ev-temp-block").hidden = !vars.length;
+  $("ev-prec-block").hidden = !withPrec;
+  if (!vars.length && !withPrec) { $("ev-note").textContent = "Selecciona al menos una variable."; return; }
+  const precTxt = withPrec ? runEvolutionPrec(S, mdS, mdE, minCov) : "";
+  if (!vars.length) { $("ev-note").textContent = precTxt; return; }
 
   const traces = [];
   let excluded = 0;
@@ -936,7 +941,79 @@ function runEvolution() {
   $("ev-note").textContent =
     (excluded ? `${excluded} año-variable excluidos por cobertura < ${Math.round(minCov * 100)}%. ` : "") +
     (refNote.length ? `Media de referencia ${refA}–${refB}: ${refNote.join(" · ")}. ` : "") +
-    (shortRef ? "Alguna variable no tiene años suficientes en la referencia para calcular anomalías." : "");
+    (shortRef ? "Alguna variable no tiene años suficientes en la referencia para calcular anomalías. " : "") +
+    precTxt;
+}
+
+/** Bloque de precipitación de «Evolución»: total de la ventana cada año y % de la normal. */
+function runEvolutionPrec(S, mdS, mdE, minCov) {
+  const [refA, refB] = getRef();
+  const groups = aggregateWindow(S.json.data.prec, mdS, mdE);
+  const xs = [], ys = [];
+  let excluded = 0;
+  for (const [yr, g] of [...groups].sort((a, b) => a[0] - b[0])) {
+    if (!g.nTotal) continue;
+    if (g.n / g.nTotal < minCov) { excluded++; continue; }
+    // los días sin dato se rellenan con la media del resto de la ventana
+    xs.push(yr); ys.push((g.sum / g.n) * g.nTotal);
+  }
+  const win = `${mdLabel(mdS)} → ${mdLabel(mdE)}`;
+  const refVals = ys.filter((_, k) => xs[k] >= refA && xs[k] <= refB);
+  const normal = refVals.length >= 10 ? mean(refVals) : null;
+
+  const traces = [{
+    x: xs, y: ys, type: "bar", name: "total", showlegend: false,
+    marker: { color: VAR_COLORS.prec, opacity: 0.7 },
+    hovertemplate: "%{x}: %{y:.0f} mm<extra></extra>",
+  }];
+  if ($("ev-smooth").checked && xs.length > 10) {
+    const sy = xs.map((_, i) => {
+      const lo = Math.max(0, i - 5), hi = Math.min(xs.length, i + 5);
+      let t = 0; for (let j = lo; j < hi; j++) t += ys[j];
+      return t / (hi - lo);
+    });
+    traces.push({ x: xs, y: sy, mode: "lines", name: "media móvil 10 años",
+      line: { color: TH.fg, width: 2.5 }, hovertemplate: "%{x}: %{y:.0f} mm<extra>móvil 10a</extra>" });
+  }
+  let trendTxt = "";
+  const fit = ols(xs, ys);
+  if (fit && xs.length >= 10) {
+    traces.push({ x: [xs[0], xs[xs.length - 1]], y: [fit.a + fit.b * xs[0], fit.a + fit.b * xs[xs.length - 1]],
+      mode: "lines", name: "tendencia lineal", line: { color: TH.muted, width: 1.5, dash: "dot" }, hoverinfo: "skip" });
+    const pct = normal ? ` (${(1000 * fit.b / normal >= 0 ? "+" : "")}${(1000 * fit.b / normal).toFixed(1)} % de la normal)` : "";
+    trendTxt = `Tendencia: ${(fit.b * 10 >= 0 ? "+" : "")}${(fit.b * 10).toFixed(1)} mm/década${pct}, orientativa (la lluvia varía mucho de un año a otro).`;
+  }
+  const layout = baseLayout(`${S.json.name} · precipitación total ${win}`);
+  layout.yaxis.title = { text: "mm" };
+  layout.legend = { orientation: "h", y: -0.12 };
+  if (normal) layout.shapes = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: normal, y1: normal,
+    line: { color: TH.muted, dash: "dash", width: 1 } }];
+  Plotly.newPlot("plot-evolucion-prec", traces, layout, PLOTLY_CFG);
+
+  const l2 = baseLayout("");
+  l2.margin.t = 10;
+  l2.showlegend = false;
+  if (normal) {
+    const pc = ys.map((y) => (100 * y) / normal);
+    const amax = Math.max(50, ...pc.map((x) => Math.abs(x - 100)));
+    l2.yaxis.title = { text: `% de la normal ${refA}–${refB}` };
+    l2.shapes = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 100, y1: 100, line: { color: TH.muted, width: 1 } }];
+    Plotly.newPlot("plot-evolucion-prec-anom", [{
+      x: xs, y: pc, type: "bar",
+      marker: { color: pc, cmin: 100 - amax, cmax: 100 + amax,
+        colorscale: [[0, "#8c510a"], [0.25, "#d8b365"], [0.5, "#f6e8c3"], [0.75, "#5ab4ac"], [1, "#01665e"]] },
+      hovertemplate: "%{x}: %{y:.0f} %<extra></extra>",
+    }], l2, PLOTLY_CFG);
+  } else {
+    Plotly.purge("plot-evolucion-prec-anom");
+  }
+  const wettest = ys.length ? xs[ys.indexOf(Math.max(...ys))] : null;
+  const driest = ys.length ? xs[ys.indexOf(Math.min(...ys))] : null;
+  return (normal ? `Precipitación normal ${refA}–${refB} (${win}): ${normal.toFixed(0)} mm. ` :
+                   `Precipitación: no hay años suficientes en ${refA}–${refB} para calcular la normal. `) +
+    (wettest !== null ? `Año más lluvioso: ${wettest} (${Math.max(...ys).toFixed(0)} mm); más seco: ${driest} (${Math.min(...ys).toFixed(0)} mm). ` : "") +
+    (excluded ? `${excluded} años sin cobertura suficiente; en el resto los días sin dato se rellenan con la media de la ventana. ` : "") +
+    trendTxt;
 }
 
 // ==========================================================
@@ -1063,34 +1140,76 @@ function runStripes() {
 // ==========================================================
 
 const INDICES = {
-  noches_trop: { label: "Noches tropicales (Tmin ≥ 20 °C) — días/año", v: "tmin", type: "count", test: (x) => x >= 20 },
-  noches_torr: { label: "Noches tórridas (Tmin ≥ 25 °C) — días/año", v: "tmin", type: "count", test: (x) => x >= 25 },
-  dias_verano: { label: "Días de verano (Tmax ≥ 25 °C) — días/año", v: "tmax", type: "count", test: (x) => x >= 25 },
-  dias_calor: { label: "Días cálidos (Tmax ≥ 35 °C) — días/año", v: "tmax", type: "count", test: (x) => x >= 35 },
-  dias_helada: { label: "Días de helada (Tmin < 0 °C) — días/año", v: "tmin", type: "count", test: (x) => x < 0 },
-  primer_30: { label: "Primer día del año con Tmax ≥ 30 °C — fecha", v: "tmax", type: "first", test: (x) => x >= 30 },
-  primer_35: { label: "Primer día del año con Tmax ≥ 35 °C — fecha", v: "tmax", type: "first", test: (x) => x >= 35 },
-  primer_40: { label: "Primer día del año con Tmax ≥ 40 °C — fecha", v: "tmax", type: "first", test: (x) => x >= 40 },
-  ult_helada: { label: "Última helada de primavera (antes del 1 jul) — fecha", v: "tmin", type: "lastBefore", test: (x) => x < 0 },
-  pri_helada: { label: "Primera helada de otoño (después del 1 jul) — fecha", v: "tmin", type: "firstAfter", test: (x) => x < 0 },
-  dur_verano: { label: "Duración del verano térmico (primer→último Tmax ≥ 30 °C) — días", v: "tmax", type: "duration", test: (x) => x >= 30 },
+  noches_trop: { g: "Temperatura", label: "Noches tropicales (Tmin ≥ 20 °C) — días/año", v: "tmin", type: "count", test: (x) => x >= 20 },
+  noches_torr: { g: "Temperatura", label: "Noches tórridas (Tmin ≥ 25 °C) — días/año", v: "tmin", type: "count", test: (x) => x >= 25 },
+  dias_verano: { g: "Temperatura", label: "Días de verano (Tmax ≥ 25 °C) — días/año", v: "tmax", type: "count", test: (x) => x >= 25 },
+  dias_calor: { g: "Temperatura", label: "Días cálidos (Tmax ≥ 35 °C) — días/año", v: "tmax", type: "count", test: (x) => x >= 35 },
+  dias_helada: { g: "Temperatura", label: "Días de helada (Tmin < 0 °C) — días/año", v: "tmin", type: "count", test: (x) => x < 0 },
+  primer_30: { g: "Temperatura", label: "Primer día del año con Tmax ≥ 30 °C — fecha", v: "tmax", type: "first", test: (x) => x >= 30 },
+  primer_35: { g: "Temperatura", label: "Primer día del año con Tmax ≥ 35 °C — fecha", v: "tmax", type: "first", test: (x) => x >= 35 },
+  primer_40: { g: "Temperatura", label: "Primer día del año con Tmax ≥ 40 °C — fecha", v: "tmax", type: "first", test: (x) => x >= 40 },
+  ult_helada: { g: "Temperatura", label: "Última helada de primavera (antes del 1 jul) — fecha", v: "tmin", type: "lastBefore", test: (x) => x < 0 },
+  pri_helada: { g: "Temperatura", label: "Primera helada de otoño (después del 1 jul) — fecha", v: "tmin", type: "firstAfter", test: (x) => x < 0 },
+  dur_verano: { g: "Temperatura", label: "Duración del verano térmico (primer→último Tmax ≥ 30 °C) — días", v: "tmax", type: "duration", test: (x) => x >= 30 },
+  // precipitación (índices ETCCDI; día de lluvia = 1 mm o más)
+  r1mm: { g: "Precipitación", label: "Días de lluvia (≥ 1 mm) — días/año", v: "prec", type: "count", test: (x) => x >= 1 },
+  r10mm: { g: "Precipitación", label: "Días de lluvia fuerte (≥ 10 mm) — días/año", v: "prec", type: "count", test: (x) => x >= 10 },
+  r20mm: { g: "Precipitación", label: "Días de lluvia muy fuerte (≥ 20 mm) — días/año", v: "prec", type: "count", test: (x) => x >= 20 },
+  r50mm: { g: "Precipitación", label: "Días de lluvia torrencial (≥ 50 mm) — días/año", v: "prec", type: "count", test: (x) => x >= 50 },
+  rx1day: { g: "Precipitación", label: "Máxima lluvia en un día (Rx1day) — mm", v: "prec", type: "max", unit: "mm" },
+  rx5day: { g: "Precipitación", label: "Máxima lluvia en 5 días seguidos (Rx5day) — mm", v: "prec", type: "maxSum", n: 5, unit: "mm" },
+  sdii: { g: "Precipitación", label: "Intensidad media de los días de lluvia (SDII) — mm/día", v: "prec", type: "sdii", unit: "mm/día" },
+  cdd: { g: "Precipitación", label: "Racha seca más larga (días seguidos < 1 mm, CDD) — días", v: "prec", type: "maxRun", test: (x) => x < 1 },
+  cwd: { g: "Precipitación", label: "Racha húmeda más larga (días seguidos ≥ 1 mm, CWD) — días", v: "prec", type: "maxRun", test: (x) => x >= 1 },
+  r95p: { g: "Precipitación", label: "Lluvia caída en días muy lluviosos (> P95, R95pTOT) — % del total", v: "prec", type: "r95p", unit: "%" },
 };
 
 function populateIndices() {
   const sel = $("ix-index");
+  const groups = {};
   for (const [k, d] of Object.entries(INDICES)) {
+    if (!groups[d.g]) {
+      groups[d.g] = document.createElement("optgroup");
+      groups[d.g].label = d.g;
+      sel.appendChild(groups[d.g]);
+    }
     const opt = document.createElement("option");
     opt.value = k; opt.textContent = d.label;
-    sel.appendChild(opt);
+    groups[d.g].appendChild(opt);
   }
+}
+
+/** Umbral P95 de los días de lluvia (≥ 1 mm) del período de referencia. */
+function wetP95(M, refA, refB) {
+  const pool = [];
+  for (const [yr, row] of M) {
+    if (yr < refA || yr > refB) continue;
+    for (const x of row) if (x !== null && x >= 1) pool.push(x);
+  }
+  if (pool.length < 100) return null;
+  pool.sort((a, b) => a - b);
+  return quantile(pool, 0.95);
 }
 
 function runIndices() {
   const S = state.station;
   const def = INDICES[$("ix-index").value];
   const minCov = +$("ix-cov").value / 100;
+  const note = $("ix-note");
+  if (!S.json.data[def.v]) {
+    Plotly.purge("plot-indices");
+    note.textContent = `Esta estación no tiene datos de ${VAR_LABELS[def.v]}.`;
+    return;
+  }
   const M = yearMatrix(S.json.data[def.v]);
   const posJul1 = MD_IDX_365.get(701);
+  const [refA, refB] = getRef();
+  const p95 = def.type === "r95p" ? wetP95(M, refA, refB) : null;
+  if (def.type === "r95p" && p95 === null) {
+    Plotly.purge("plot-indices");
+    note.textContent = `No hay días de lluvia suficientes en ${refA}–${refB} para calcular el umbral P95.`;
+    return;
+  }
 
   const xs = [], ys = [];
   let neverCount = 0;
@@ -1100,6 +1219,31 @@ function runIndices() {
     let val = null;
     if (def.type === "count") {
       val = row.reduce((s, x) => s + (x !== null && def.test(x) ? 1 : 0), 0);
+    } else if (def.type === "max") {
+      val = Math.max(...row.filter((x) => x !== null));
+    } else if (def.type === "maxSum") {
+      for (let p = 0; p + def.n <= 365; p++) {
+        let t = 0, ok = true;
+        for (let q = p; q < p + def.n; q++) { if (row[q] === null) { ok = false; break; } t += row[q]; }
+        if (ok && (val === null || t > val)) val = t;
+      }
+      if (val === null) continue;
+    } else if (def.type === "sdii") {
+      let t = 0, n = 0;
+      for (const x of row) if (x !== null && x >= 1) { t += x; n++; }
+      if (!n) { neverCount++; continue; }
+      val = t / n;
+    } else if (def.type === "maxRun") {
+      let run = 0; val = 0;
+      for (const x of row) {
+        run = x !== null && def.test(x) ? run + 1 : 0;   // un día sin dato corta la racha
+        if (run > val) val = run;
+      }
+    } else if (def.type === "r95p") {
+      let tot = 0, hi = 0;
+      for (const x of row) if (x !== null && x >= 1) { tot += x; if (x > p95) hi += x; }
+      if (!tot) { neverCount++; continue; }
+      val = (100 * hi) / tot;
     } else {
       let first = null, last = null;
       for (let p = 0; p < 365; p++) {
@@ -1123,15 +1267,20 @@ function runIndices() {
   }
 
   const isDate = ["first", "lastBefore", "firstAfter"].includes(def.type);
+  const isBar = !isDate && def.type !== "duration";
+  const isPrec = def.v === "prec";
+  const unit = def.unit || "días";
+  const fmt = unit === "días" ? "%{y}" : "%{y:.1f}";
   const traces = [{
-    x: xs, y: ys, mode: def.type === "count" ? undefined : "markers",
-    type: def.type === "count" ? "bar" : "scatter",
-    marker: def.type === "count"
-      ? { color: ys, colorscale: "Plasma" }
+    x: xs, y: ys, mode: isBar ? undefined : "markers",
+    type: isBar ? "bar" : "scatter",
+    marker: isBar
+      ? { color: ys, colorscale: isPrec ? "YlGnBu" : "Plasma", reversescale: isPrec }
       : { color: VAR_COLORS[def.v], size: 6 },
-    hovertemplate: isDate ? "%{x}: %{text}<extra></extra>" : "%{x}: %{y}<extra></extra>",
+    hovertemplate: isDate ? "%{x}: %{text}<extra></extra>" : `%{x}: ${fmt} ${unit}<extra></extra>`,
     text: isDate ? ys.map((p) => mdLabel(MD_SEQ_365[p])) : undefined,
   }];
+  if (isBar && isPrec && $("ix-index").value === "cdd") Object.assign(traces[0].marker, { colorscale: "YlOrBr", reversescale: false });
 
   let slopeTxt = "";
   const fit = ols(xs, ys);
@@ -1142,7 +1291,8 @@ function runIndices() {
       mode: "lines", line: { color: TH.fg, width: 1.5, dash: "dot" },
       hoverinfo: "skip", showlegend: false,
     });
-    slopeTxt = ` Tendencia lineal: ${(fit.b * 10).toFixed(1)} ${isDate || def.type === "duration" ? "días" : "días"}/década.`;
+    const u = unit === "%" ? "puntos %" : unit;
+    slopeTxt = ` Tendencia lineal: ${(fit.b * 10 >= 0 ? "+" : "")}${(fit.b * 10).toFixed(1)} ${u}/década.`;
   }
 
   const layout = baseLayout(`${S.json.name} · ${def.label}`);
@@ -1152,14 +1302,21 @@ function runIndices() {
     layout.yaxis.tickvals = ticks.map((m) => MD_IDX_365.get(m));
     layout.yaxis.ticktext = ticks.map((m) => MESES[Math.floor(m / 100)]);
   } else {
-    layout.yaxis.title = { text: "días" };
+    layout.yaxis.title = { text: unit === "%" ? "% de la lluvia del año" : unit };
   }
   Plotly.newPlot("plot-indices", traces, layout, PLOTLY_CFG);
 
-  $("ix-note").textContent =
+  let extra = "";
+  if (def.type === "r95p") extra = ` Umbral P95 de los días de lluvia en ${refA}–${refB}: ${p95.toFixed(1)} mm.`;
+  if (def.type === "maxRun") extra = " Un día sin dato corta la racha; las rachas que cruzan el cambio de año se cuentan por separado.";
+  if (isBar && ys.length) {
+    const k = ys.indexOf(Math.max(...ys));
+    extra += ` Máximo: ${xs[k]} (${unit === "días" ? ys[k] : ys[k].toFixed(1)} ${unit}).`;
+  }
+  note.textContent =
     `${xs.length} años con cobertura ≥ ${Math.round(minCov * 100)}%.` +
     (neverCount ? ` ${neverCount} años cumplen cobertura pero nunca alcanzan el umbral (no se dibujan).` : "") +
-    slopeTxt + " La tendencia OLS es orientativa, sin test de significación.";
+    slopeTxt + extra + " La tendencia OLS es orientativa, sin test de significación.";
 }
 
 // ==========================================================

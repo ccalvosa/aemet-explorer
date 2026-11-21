@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=45">
+<link rel="stylesheet" href="css/style.css?v=46">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -299,7 +299,7 @@
 
     <!-- ---- TAB: EVOLUCIÓN ---- -->
     <section id="panel-evolucion" class="panel card" hidden>
-      <header class="panel-head"><h2>Evolución</h2><p>La media de cada año (o de las fechas que elijas) y cuánto se aleja del período normal.</p></header>
+      <header class="panel-head"><h2>Evolución</h2><p>La media de cada año (o de las fechas que elijas), la lluvia total y cuánto se alejan del período normal.</p></header>
       <div class="controls">
         <div class="control">
           <span class="field-label">Variables</span>
@@ -308,6 +308,7 @@
             <label class="chk chk-tmed"><input type="checkbox" id="ev-tmed" checked> Tmed</label>
             <label class="chk chk-tmin"><input type="checkbox" id="ev-tmin" checked> Tmin</label>
             <label class="chk"><input type="checkbox" id="ev-dtr"> DTR</label>
+            <label class="chk chk-prec"><input type="checkbox" id="ev-prec" checked> Precipitación</label>
           </div>
         </div>
         <div class="control">
@@ -326,9 +327,17 @@
           <label class="chk"><input type="checkbox" id="ev-smooth" checked> Media móvil 10 años</label>
         </div>
       </div>
-      <div id="plot-evolucion" class="plot"></div>
-      <h3 class="block-title">Anomalía respecto al período de referencia</h3>
-      <div id="plot-evolucion-anom" class="plot plot-half"></div>
+      <div id="ev-temp-block">
+        <div id="plot-evolucion" class="plot"></div>
+        <h3 class="block-title">Anomalía respecto al período de referencia</h3>
+        <div id="plot-evolucion-anom" class="plot plot-half"></div>
+      </div>
+      <div id="ev-prec-block">
+        <h3 class="block-title">Precipitación</h3>
+        <div id="plot-evolucion-prec" class="plot"></div>
+        <h3 class="block-title">Precipitación respecto a la normal</h3>
+        <div id="plot-evolucion-prec-anom" class="plot plot-half"></div>
+      </div>
       <p id="ev-note" class="note"></p>
     </section>
 
@@ -372,7 +381,7 @@
 
     <!-- ---- TAB: ÍNDICES ---- -->
     <section id="panel-indices" class="panel card" hidden>
-      <header class="panel-head"><h2>Índices climáticos</h2><p>Noches tropicales, heladas, primer día de 35 °C, duración del verano… y cómo han cambiado año a año.</p></header>
+      <header class="panel-head"><h2>Índices climáticos</h2><p>Noches tropicales, heladas, primer día de 35 °C, días de lluvia, lluvia máxima en un día, rachas secas… y cómo han cambiado año a año.</p></header>
       <div class="controls">
         <div class="control control-wide">
           <label class="field-label" for="ix-index">Índice</label>
@@ -927,6 +936,6 @@
   <span>Hecho por <a href="https://x.com/MeteoZGZ" target="_blank" rel="noopener">@MeteoZGZ</a></span>
 </footer>
 
-<script src="js/app.js?v=45"></script>
+<script src="js/app.js?v=46"></script>
 </body>
 </html>
